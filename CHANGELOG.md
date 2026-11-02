@@ -36,5 +36,16 @@ First release.
 - Test suites under `tests/suites/`, run by `uv run pytest`, including
   `test_portable_checks.py`: every check clean on a fixture repository, one
   injected violation per rule caught, and a missing REQUIRED key exits 2.
+- **Shared workflows** for every repo built on ansible-devkit, called from thin
+  per-repo files pinned to a devkit tag:
+  - `reusable-ci.yml` (`kind: python | collection`): the CI gate; for a
+    collection, `ansible-test sanity` and `units` across an ansible-core matrix
+    plus `devkit check all`. Always reported as the single check `ci / gate`.
+  - `reusable-disclose.yml`: the disclosure gate on every pull request, failing
+    closed without its pattern secret. Reported as `disclose / gate`.
+  - `reusable-release.yml`: releases on merge of a version bump. A secret-free
+    build job verifies and builds; a separate publish job in the main-only
+    `release` environment checks the artifact digests, publishes a collection
+    to Galaxy, and creates the tag and GitHub release with a release-App token.
 
 [0.1.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.1.0

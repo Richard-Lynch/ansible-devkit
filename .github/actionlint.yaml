@@ -1,0 +1,12 @@
+# actionlint configuration. Each ignore names one message and why it is wrong.
+#
+# job.workflow_sha / job.workflow_repository (a reusable workflow's OWN identity) shipped in the
+# 2026-09-03 GitHub Actions update; actionlint 1.7.12 predates them. Every step using them fails
+# closed on a value that is not a 40-hex commit.
+paths:
+  .github/workflows/reusable-ci.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined in object type'
+  .github/workflows/reusable-disclose.yml:
+    ignore:
+      - 'property "workflow_(sha|repository)" is not defined in object type'

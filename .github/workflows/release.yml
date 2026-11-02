@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# release — thin caller of the shared release path (reusable-release.yml). Every repo built on
+# ansible-devkit has this same file, pinned to a devkit tag; devkit calls its own copy with ./.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      kind: python
+    permissions:
+      contents: read
