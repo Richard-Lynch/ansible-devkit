@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# reusable-ci — the ONE CI gate for every repo built on ansible-devkit: a frozen sync, the suites,
+# `devkit check all` on the repo, and formatting. GitHub-hosted runners only; every action pinned by
+# commit SHA (the tag is a comment).
+#
+# Caller (thin `ci.yml` in each repo, pinned to a devkit tag; devkit itself uses ./). The caller's
+# job id MUST be `ci`: the required status check is named `ci / gate`.
+#   on: {push: {branches: [main]}, pull_request: {}}
+#   jobs:
+#     ci:
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.1.0
+#       with: {kind: python}            # or kind: collection
+#
+# kind=python      uv sync --frozen, the suites, `devkit check all`, black.
+# kind=collection  for each ansible-core in `ansible_core` (JSON list): `ansible-test sanity` and,
+#                  when tests/unit exists, `ansible-test units` (both --docker), with the repo checked
+#                  out at ansible_collections/<namespace>/<name> as ansible-test requires; plus
+#                  `devkit check all` using the devkit at the exact commit of this workflow.
+# Every kind ends in ONE job named `gate`, so the required check is always `ci / gate` (a matrix
+# job's check name carries its matrix values and could never be required by a fixed name).
+name: reusable-ci
+
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: "What is checked: python | collection"
+        required: true
+        type: string
+      ansible_core:
+        description: "kind=collection: JSON list of ansible-core minor versions to test against"
+        required: false
+        type: string
+        default: '["2.20", "2.21"]'
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    if: inputs.kind == 'python'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Sync from the lockfile (fails if uv.lock is stale)
+        run: uv sync --frozen
+      - name: Test suites
+        # Each tests/test_*.py entry point is named here on purpose: the ci-covers-hook-tests check
+        # (part of `devkit check all` below) requires every suite in tests/ to be run by a workflow.
+        run: uv run pytest -q tests/test_suites.py tests/test_cli.py
+      - name: devkit check all (self-check)
+        run: uv run devkit check all
+      - name: Formatting (black from the locked dev group)
+        run: uv run black --check --diff .
+
+  collection-meta:
+    if: inputs.kind == 'collection'
+    runs-on: ubuntu-latest
+    outputs:
+      path: ${{ steps.m.outputs.path }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Namespace and name from galaxy.yml
+        id: m
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import re, sys
+          text = open("galaxy.yml", encoding="utf-8").read()
+          def field(k):
+              m = re.search(rf"^{k}:\s*['\"]?([a-z0-9_]+)['\"]?\s*$", text, re.M)
+              if not m:
+                  sys.exit(f"::error::galaxy.yml has no valid '{k}:'")
+              return m.group(1)
+          print(f"path=ansible_collections/{field('namespace')}/{field('name')}")
+          PY
+
+  collection:
+    if: inputs.kind == 'collection'
+    needs: collection-meta
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ansible_core: ${{ fromJSON(inputs.ansible_core) }}
+    name: collection (ansible-core ${{ matrix.ansible_core }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ${{ needs.collection-meta.outputs.path }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install ansible-core ${{ matrix.ansible_core }}
+        env:
+          V: ${{ matrix.ansible_core }}
+        run: |
+          set -euo pipefail
+          [[ "$V" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::bad ansible-core version '$V'"; exit 1; }
+          python -m pip install --disable-pip-version-check "ansible-core==${V}.*"
+      - name: ansible-test sanity
+        working-directory: ${{ needs.collection-meta.outputs.path }}
+        run: ansible-test sanity --docker -v --color
+      - name: ansible-test units
+        working-directory: ${{ needs.collection-meta.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [ -d tests/unit ]; then
+            ansible-test units --docker -v --color
+          else
+            echo "no tests/unit; skipping units"
+          fi
+
+  collection-devkit:
+    if: inputs.kind == 'collection'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: devkit check all (devkit at this workflow's own commit)
+        env:
+          # The exact devkit commit this reusable workflow was called at, so the checks and the
+          # workflow can never disagree about versions.
+          DEVKIT_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DEVKIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no workflow sha"; exit 1; }
+          uvx --from "git+https://github.com/Richard-Lynch/ansible-devkit@${DEVKIT_SHA}" devkit check all
+
+  gate:
+    name: gate
+    if: always()
+    needs: [python, collection-meta, collection, collection-devkit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every part of this kind succeeded
+        env:
+          KIND: ${{ inputs.kind }}
+          PY: ${{ needs.python.result }}
+          META: ${{ needs.collection-meta.result }}
+          COL: ${{ needs.collection.result }}
+          DK: ${{ needs.collection-devkit.result }}
+        run: |
+          set -euo pipefail
+          echo "kind=$KIND python=$PY collection-meta=$META collection=$COL collection-devkit=$DK"
+          case "$KIND" in
+            python)     [ "$PY" = success ] ;;
+            collection) [ "$META" = success ] && [ "$COL" = success ] && [ "$DK" = success ] ;;
+            *) echo "::error::unsupported kind '$KIND'"; exit 1 ;;
+          esac

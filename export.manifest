@@ -1,7 +1,12 @@
 # export.manifest — every path in this repository, one per line (the disclosure gate's manifest
 # step compares it against the tree at the scanned commit and against every path in the history).
+.github/actionlint.yaml
 .github/workflows/ci.yml
 .github/workflows/disclose.yml
+.github/workflows/release.yml
+.github/workflows/reusable-ci.yml
+.github/workflows/reusable-disclose.yml
+.github/workflows/reusable-release.yml
 .gitignore
 .python-version
 CHANGELOG.md

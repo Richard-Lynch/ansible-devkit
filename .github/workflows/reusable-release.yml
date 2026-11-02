@@ -1,0 +1,271 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# reusable-release — the ONE release path for every repo built on ansible-devkit.
+#
+# Called on every push to main. It reads the version the repo declares; if tag v<version> does not
+# exist yet it verifies, builds, and creates the tag + GitHub release from the matching CHANGELOG
+# section. So releasing is "merge a PR that bumps the version", and nothing is ever tagged by hand.
+#
+# The tag is created with a one-hour token from the release App (a GitHub App the repository owner creates for this), minted for THIS
+# repository only: the repo's tag ruleset lets only the owner and that App create v* tags. The
+# App's id (variable RELEASE_APP_ID) and key (secret RELEASE_APP_PRIVATE_KEY) live in the
+# `release` environment, which deploys only from main.
+#
+# Caller (a thin file in each repo, pinned to a devkit tag; devkit itself uses ./):
+#   on: {push: {branches: [main]}}
+#   jobs:
+#     release:
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.1.0
+#       with: {kind: python}            # or kind: collection
+#       (the release environment's secrets reach the publish job directly; nothing is passed)
+#
+# kind=python      reads [project].version from pyproject.toml; build = verify + `uv build`.
+# kind=collection  reads version from galaxy.yml; build = `ansible-galaxy collection build`; publish
+#                  ALSO uploads the tarball to Galaxy (key: GALAXY_API_KEY in the release
+#                  environment) before tagging, skipping the upload if Galaxy already has the
+#                  version, so a re-run after a partial failure completes instead of sticking.
+# Kinds are added here, not in a caller, so every repo releases the same way.
+name: reusable-release
+
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: "What is released: python | collection"
+        required: true
+        type: string
+      ansible_core:
+        description: "kind=collection: the ansible-core minor version that builds and publishes"
+        required: false
+        type: string
+        default: "2.21"
+
+permissions:
+  contents: read
+
+jobs:
+  # BUILD runs the repo's code (tests, checks, the build backend) and holds NO secret and no
+  # environment. PUBLISH holds the release key and runs no repo code: it downloads the artifacts,
+  # verifies their digests, mints a token and creates the release. A malicious test or build hook
+  # therefore never shares a runner with the key.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      released: ${{ steps.v.outputs.released }}
+      digest: ${{ steps.pack.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the declared version and whether it is already released
+        id: v
+        env:
+          KIND: ${{ inputs.kind }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "$KIND" in
+            python) v=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])") ;;
+            collection) v=$(python3 -c "import re; m=re.search(r'^version:\s*[\x27\x22]?([0-9.]+)[\x27\x22]?\s*$', open('galaxy.yml').read(), re.M); print(m.group(1) if m else '')") ;;
+            *) echo "::error::unsupported kind '$KIND'"; exit 1 ;;
+          esac
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$v' is not MAJOR.MINOR.PATCH"; exit 1
+          fi
+          # "Released" means the GitHub RELEASE exists — the last thing publish creates — not merely
+          # the tag, so a run that died after reserving the tag is completed by the next run.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/v$v")
+          case "$code" in
+            200) released=true ;;
+            404) released=false ;;
+            *) echo "::error::cannot tell whether release v$v exists (HTTP $code)"; exit 1 ;;
+          esac
+          echo "version=$v released=$released"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "released=$released" >> "$GITHUB_OUTPUT"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        if: steps.v.outputs.released == 'false' && inputs.kind == 'python'
+
+      - name: Verify (the same gate as ci) and build — python
+        if: steps.v.outputs.released == 'false' && inputs.kind == 'python'
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          uv run pytest -q
+          uv run devkit check all
+          uv build
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.v.outputs.released == 'false' && inputs.kind == 'collection'
+        with:
+          python-version: "3.12"
+
+      - name: Build — collection (verified by ci / gate on the PR that bumped the version)
+        if: steps.v.outputs.released == 'false' && inputs.kind == 'collection'
+        env:
+          CORE: ${{ inputs.ansible_core }}
+        run: |
+          set -euo pipefail
+          [[ "$CORE" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::bad ansible-core '$CORE'"; exit 1; }
+          python -m pip install --disable-pip-version-check "ansible-core==${CORE}.*"
+          ansible-galaxy collection build --output-path dist
+
+      - name: Release notes from the CHANGELOG section for this version
+        if: steps.v.outputs.released == 'false'
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          v = os.environ["V"]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"^## \[{re.escape(v)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.M | re.S)
+          if not m or not m.group(1).strip():
+              sys.exit(f"::error::CHANGELOG.md has no non-empty '## [{v}]' section")
+          open("dist/release-notes.md", "w", encoding="utf-8").write(m.group(1).strip() + "\n")
+          PY
+
+      - name: Record the artifact digest
+        id: pack
+        if: steps.v.outputs.released == 'false'
+        run: |
+          set -euo pipefail
+          digest=$(cd dist && sha256sum -- * | sort | sha256sum | cut -d' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          (cd dist && sha256sum -- *)
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.v.outputs.released == 'false'
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Already released
+        if: steps.v.outputs.released == 'true'
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: echo "v$V already exists; nothing to release."
+
+  publish:
+    needs: build
+    if: needs.build.outputs.released == 'false'
+    runs-on: ubuntu-latest
+    # Deployable only from main (repo setting); holds the release App key.
+    environment: release
+    # The workflow token stays read-only: the tag and release are written with the App token.
+    permissions:
+      contents: read
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      # No checkout: nothing from the repository runs in the job that holds the key.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Verify the artifacts are the ones build produced
+        env:
+          WANT: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          got=$(cd dist && sha256sum -- * | sort | sha256sum | cut -d' ' -f1)
+          if [ "$got" != "$WANT" ]; then
+            echo "::error::artifact digest $got != build's $WANT"; exit 1
+          fi
+
+      - name: Mint a release token (this repository, contents:write only)
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Reserve the tag atomically (before anything is published)
+        # Creating the ref FAILS if it already exists, so two runs (or a run and a hand-made tag)
+        # cannot both publish under it. An existing tag is accepted only when it already points at
+        # this commit (a re-run completing an earlier attempt). Once created, the tag ruleset lets
+        # nobody but the owner move or delete it.
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          V: ${{ needs.build.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/v$V" -f sha="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "reserved v$V at $GITHUB_SHA"
+          else
+            at=$(gh api "repos/$REPO/commits/v$V" --jq .sha 2>/dev/null || true)
+            [ "$at" = "$GITHUB_SHA" ] || { echo "::error::v$V exists at '${at:-unknown}', not $GITHUB_SHA"; exit 1; }
+            echo "v$V already at $GITHUB_SHA; completing the release"
+          fi
+
+      - name: Publish to Galaxy — collection (no third-party code runs next to the key)
+        # Uploaded with curl to Galaxy's v3 API rather than `ansible-galaxy`, so the job holding
+        # GALAXY_API_KEY installs and runs nothing. If Galaxy already has this version, its recorded
+        # sha256 must equal the tarball built from this commit, or the run fails.
+        if: inputs.kind == 'collection'
+        env:
+          GALAXY_API_KEY: ${{ secrets.GALAXY_API_KEY }}
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ -n "$GALAXY_API_KEY" ] || { echo "::error::GALAXY_API_KEY is not set in the release environment"; exit 1; }
+          api=https://galaxy.ansible.com/api
+          tarball=$(ls dist/*.tar.gz)
+          want=$(sha256sum "$tarball" | cut -d' ' -f1)
+          base=$(basename "$tarball" .tar.gz)          # <namespace>-<name>-<version>
+          ns=${base%%-*}; rest=${base#*-}; name=${rest%-*}
+          url="$api/v3/plugin/ansible/content/published/collections/index/$ns/$name/versions/$V/"
+          galaxy_sha() { curl -fsS "$url" | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact"]["sha256"])'; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+          case "$code" in
+            200) ;;
+            404)
+              task=$(curl -fsS -H "Authorization: Token $GALAXY_API_KEY" \
+                -F "file=@$tarball" -F "sha256=$want" "$api/v3/artifacts/collections/" \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"])')
+              case "$task" in https://galaxy.ansible.com/*|/api/*) ;; *) echo "::error::unexpected import task '$task'"; exit 1 ;; esac
+              case "$task" in /*) task="https://galaxy.ansible.com$task" ;; esac
+              for _ in $(seq 1 60); do
+                state=$(curl -fsS -H "Authorization: Token $GALAXY_API_KEY" "$task" \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))')
+                case "$state" in
+                  completed) break ;;
+                  failed) echo "::error::Galaxy import failed (see $task)"; exit 1 ;;
+                esac
+                sleep 10
+              done
+              [ "$state" = completed ] || { echo "::error::Galaxy import did not complete (last state '$state')"; exit 1; } ;;
+            *) echo "::error::cannot tell whether Galaxy has $ns.$name $V (HTTP $code)"; exit 1 ;;
+          esac
+          got=$(galaxy_sha)
+          [ "$got" = "$want" ] || { echo "::error::Galaxy's $ns.$name $V is sha256 $got, this build is $want"; exit 1; }
+          echo "Galaxy has $ns.$name $V with sha256 $want"
+
+      - name: Create the GitHub release on the reserved tag
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          V: ${{ needs.build.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mv dist/release-notes.md release-notes.md
+          gh release create "v$V" dist/* --repo "$REPO" --verify-tag \
+            --title "v$V" --notes-file release-notes.md
+          tag_sha=$(gh api "repos/$REPO/commits/v$V" --jq .sha)
+          if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::tag v$V points at '$tag_sha', expected $GITHUB_SHA"; exit 1
+          fi
+          echo "released v$V at $GITHUB_SHA"

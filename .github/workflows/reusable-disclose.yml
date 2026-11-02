@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# reusable-disclose — re-run the GENERIC half of the disclosure gate on every pull request, for
+# every repo built on ansible-devkit.
+#
+# Caller (thin `disclose.yml` in each repo; devkit itself uses ./). The caller's job id MUST be
+# `disclose`: the required status check is named `disclose / gate`.
+#   on: {pull_request: {}}
+#   jobs:
+#     disclose:
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.1.0
+#       secrets: {DISCLOSE_PATTERNS: "${{ secrets.DISCLOSE_PATTERNS }}"}
+#
+# The private repository that publishes here runs the full gate (manifest, secrets over the whole history, estate literals,
+# known secret values) before any push to this repository. This workflow re-runs the same tool on
+# every PR so a later change cannot reintroduce what the first push was checked for. The pattern
+# file names an estate, so it never lives in this repo: it arrives as the DISCLOSE_PATTERNS secret
+# and is written to a temp file for the one step that reads it.
+#
+# FAILS CLOSED. No secret (a fork, a misconfigured repo) is a failed run, not a skipped step: a gate
+# that passes because it had nothing to check is the failure mode this package exists to catch.
+# The two scanners are installed from pinned release tarballs whose sha256 is verified here.
+#
+# THE PR IS DATA, NEVER CODE. The pull request is checked out into scan/ and only read. `devkit` is
+# installed from a TRUSTED commit — this shared workflow's own commit (job.workflow_sha) or, when a
+# repository calls its own copy (devkit itself), the PR's BASE commit — so a PR can neither run
+# code next to DISCLOSE_PATTERNS nor change the implementation that judges it.
+#
+# `--allow-missing secrets-cache`: the known-secret-VALUE check needs the publisher's private
+# credential cache, which CI never has. That check runs in the publisher's own gate before every
+# push; this workflow re-runs everything that can run without private values.
+name: reusable-disclose
+
+on:
+  workflow_call:
+    secrets:
+      DISCLOSE_PATTERNS:
+        description: The publishing repository's private pattern file (set by its owner's tooling).
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  TRUFFLEHOG_VERSION: 3.99.3
+  TRUFFLEHOG_SHA256: 029b182e0ed35fd5b02cd1eadc2a94bd457ab14ad22a9380b6e5d9652261d28d
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: scan
+          # The gate scans every blob reachable from any ref, every commit message and author.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # No cache in the job that holds the pattern secret: a cache can be written by jobs that
+          # run PR code.
+          enable-cache: false
+      - name: Install the scanners (pinned, checksummed)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz -C "$HOME/bin" gitleaks
+          curl -fsSL -o trufflehog.tgz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+          echo "${TRUFFLEHOG_SHA256}  trufflehog.tgz" | sha256sum -c -
+          tar -xzf trufflehog.tgz -C "$HOME/bin" trufflehog
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Choose the trusted devkit commit
+        id: trusted
+        env:
+          WF_REPO: ${{ job.workflow_repository }}
+          WF_SHA: ${{ job.workflow_sha }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$WF_REPO" = "$REPO" ]; then
+            # The base commit is trusted ONLY when it is the protected default branch: a PR into any
+            # other branch could name a base the PR author controls.
+            [ "$BASE_REF" = "$DEFAULT_BRANCH" ] || { echo "::error::PR base '$BASE_REF' is not the default branch '$DEFAULT_BRANCH'"; exit 1; }
+            sha="$BASE_SHA"
+          else
+            sha="$WF_SHA"
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no trusted devkit commit ('$sha')"; exit 1; }
+          echo "devkit at $sha (workflow repo $WF_REPO)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Check out devkit at the trusted commit (its own lockfile decides every dependency)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Richard-Lynch/ansible-devkit
+          ref: ${{ steps.trusted.outputs.sha }}
+          path: devkit
+          persist-credentials: false
+
+      - name: Install devkit from its lockfile
+        env:
+          UV_NO_CACHE: "1"
+        run: uv sync --frozen --no-dev --project devkit
+
+      - name: Write the private pattern file (fails if the secret is absent)
+        env:
+          DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCLOSE_PATTERNS}" ]; then
+            echo "::error::DISCLOSE_PATTERNS is not set; the gate cannot run and must not pass" >&2
+            exit 2
+          fi
+          umask 077
+          printf '%s' "${DISCLOSE_PATTERNS}" > "${RUNNER_TEMP}/patterns.json"
+      - name: devkit disclose
+        env:
+          # The merge commit CI checked out: reachable from the PR's merge ref, so the full-history
+          # scanners and the gate agree on scope.
+          SHA: ${{ github.sha }}
+          UV_NO_CACHE: "1"
+        run: |
+          set -euo pipefail
+          uv run --frozen --no-dev --project devkit \
+            devkit disclose --repo "$GITHUB_WORKSPACE/scan" --sha "${SHA}" \
+            --patterns "${RUNNER_TEMP}/patterns.json" \
+            --allow-missing secrets-cache \
+            --report "${RUNNER_TEMP}/disclose-report.json"
+      - name: Report (findings name a rule and a location, never a value)
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "${RUNNER_TEMP}/disclose-report.json" && cat "${RUNNER_TEMP}/disclose-report.json"

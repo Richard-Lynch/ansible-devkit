@@ -1,78 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# disclose — re-run the GENERIC half of the disclosure gate on every pull request.
-#
-# The private repository that publishes here runs the full gate (manifest, secrets over the whole history, estate literals,
-# known secret values) before any push to this repository. This workflow re-runs the same tool on
-# every PR so a later change cannot reintroduce what the first push was checked for. The pattern
-# file names an estate, so it never lives in this repo: it arrives as the DISCLOSE_PATTERNS secret
-# and is written to a temp file for the one step that reads it.
-#
-# FAILS CLOSED. No secret (a fork, a misconfigured repo) is a failed run, not a skipped step: a gate
-# that passes because it had nothing to check is the failure mode this package exists to catch.
-# The two scanners are installed from pinned release tarballs whose sha256 is verified here.
+# disclose — thin caller of the shared disclosure gate (reusable-disclose.yml). The job id
+# `disclose` makes the required status check `disclose / gate`. Fails closed when the
+# DISCLOSE_PATTERNS secret is absent (a fork PR never receives it).
 name: disclose
 
 on:
   pull_request:
+    # `edited` re-runs the gate when a PR is retargeted to another base branch.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
 
-env:
-  GITLEAKS_VERSION: 8.30.1
-  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-  TRUFFLEHOG_VERSION: 3.99.3
-  TRUFFLEHOG_SHA256: 029b182e0ed35fd5b02cd1eadc2a94bd457ab14ad22a9380b6e5d9652261d28d
-
 jobs:
   disclose:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The gate scans every blob reachable from any ref, every commit message and author.
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
-      - name: Install the scanners (pinned, checksummed)
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/bin"
-          curl -fsSL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
-          tar -xzf gitleaks.tgz -C "$HOME/bin" gitleaks
-          curl -fsSL -o trufflehog.tgz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
-          echo "${TRUFFLEHOG_SHA256}  trufflehog.tgz" | sha256sum -c -
-          tar -xzf trufflehog.tgz -C "$HOME/bin" trufflehog
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-      - name: Sync from the lockfile
-        run: uv sync --frozen
-      - name: Write the private pattern file (fails if the secret is absent)
-        env:
-          DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
-        run: |
-          set -euo pipefail
-          if [ -z "${DISCLOSE_PATTERNS}" ]; then
-            echo "::error::DISCLOSE_PATTERNS is not set; the gate cannot run and must not pass" >&2
-            exit 2
-          fi
-          umask 077
-          printf '%s' "${DISCLOSE_PATTERNS}" > "${RUNNER_TEMP}/patterns.json"
-      - name: devkit disclose
-        env:
-          # The merge commit CI checked out: reachable from the PR's merge ref, so the full-history
-          # scanners and the gate agree on scope.
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          uv run devkit disclose --repo . --sha "${SHA}" \
-            --patterns "${RUNNER_TEMP}/patterns.json" \
-            --allow-missing secrets-cache \
-            --report "${RUNNER_TEMP}/disclose-report.json"
-      - name: Report (findings name a rule and a location, never a value)
-        if: always()
-        run: |
-          set -euo pipefail
-          test -f "${RUNNER_TEMP}/disclose-report.json" && cat "${RUNNER_TEMP}/disclose-report.json"
+    uses: ./.github/workflows/reusable-disclose.yml
+    secrets:
+      DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
