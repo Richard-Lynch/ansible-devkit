@@ -2,7 +2,7 @@
 #
 # disclose — thin caller of the shared disclosure gate (reusable-disclose.yml). The job id
 # `disclose` makes the required status check `disclose / gate`. Fails closed when the
-# DISCLOSE_PATTERNS secret is absent (a fork PR never receives it).
+# DISCLOSE_PATTERNS or DISCLOSE_ALLOW secret is absent (a fork PR never receives it).
 name: disclose
 
 on:
@@ -18,3 +18,4 @@ jobs:
     uses: ./.github/workflows/reusable-disclose.yml
     secrets:
       DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
+      DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}

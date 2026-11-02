@@ -9,7 +9,9 @@
 #   jobs:
 #     disclose:
 #       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.1.0
-#       secrets: {DISCLOSE_PATTERNS: "${{ secrets.DISCLOSE_PATTERNS }}"}
+#       secrets:
+#         DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
+#         DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}
 #
 # The private repository that publishes here runs the full gate (manifest, secrets over the whole history, estate literals,
 # known secret values) before any push to this repository. This workflow re-runs the same tool on
@@ -26,6 +28,9 @@
 # repository calls its own copy (devkit itself), the PR's BASE commit — so a PR can neither run
 # code next to DISCLOSE_PATTERNS nor change the implementation that judges it.
 #
+# The exemptions (DISCLOSE_ALLOW) also arrive as a secret from the publisher, never from the
+# repository, so a PR cannot widen the exemptions that judge it.
+#
 # `--allow-missing secrets-cache`: the known-secret-VALUE check needs the publisher's private
 # credential cache, which CI never has. That check runs in the publisher's own gate before every
 # push; this workflow re-runs everything that can run without private values.
@@ -34,6 +39,9 @@ name: reusable-disclose
 on:
   workflow_call:
     secrets:
+      DISCLOSE_ALLOW:
+        description: The publisher's exemption list (owner login locations etc.), set by its tooling.
+        required: false
       DISCLOSE_PATTERNS:
         description: The publishing repository's private pattern file (set by its owner's tooling).
         required: false
@@ -109,17 +117,21 @@ jobs:
           UV_NO_CACHE: "1"
         run: uv sync --frozen --no-dev --project devkit
 
-      - name: Write the private pattern file (fails if the secret is absent)
+      - name: Write the private pattern and exemption files (fails if either secret is absent)
         env:
           DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
+          DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}
         run: |
           set -euo pipefail
-          if [ -z "${DISCLOSE_PATTERNS}" ]; then
-            echo "::error::DISCLOSE_PATTERNS is not set; the gate cannot run and must not pass" >&2
-            exit 2
-          fi
+          for v in DISCLOSE_PATTERNS DISCLOSE_ALLOW; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v is not set; the gate cannot run and must not pass" >&2
+              exit 2
+            fi
+          done
           umask 077
           printf '%s' "${DISCLOSE_PATTERNS}" > "${RUNNER_TEMP}/patterns.json"
+          printf '%s\n' "${DISCLOSE_ALLOW}" > "${RUNNER_TEMP}/allow.txt"
       - name: devkit disclose
         env:
           # The merge commit CI checked out: reachable from the PR's merge ref, so the full-history
@@ -131,6 +143,7 @@ jobs:
           uv run --frozen --no-dev --project devkit \
             devkit disclose --repo "$GITHUB_WORKSPACE/scan" --sha "${SHA}" \
             --patterns "${RUNNER_TEMP}/patterns.json" \
+            --allow "${RUNNER_TEMP}/allow.txt" \
             --allow-missing secrets-cache \
             --report "${RUNNER_TEMP}/disclose-report.json"
       - name: Report (findings name a rule and a location, never a value)
