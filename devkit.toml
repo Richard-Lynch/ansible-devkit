@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# devkit.toml — THIS repository's data for its own checks (`devkit check all` runs on itself).
+#
+# A key a check REQUIRES has no default: leave it out and that check exits 2 naming the key, rather
+# than silently checking nothing. An empty list is the explicit way to say "none here" — this repo
+# has no Ansible content, no agent-writable tree and no estate, so most of its lists are empty.
+# devkit.toml.example documents every key for a repository that does have them.
+
+[checks]
+# Gates `devkit check all` leaves out, each with its reason; printed as SKIPPED in the summary.
+# ha-restart-validated exits 1 when it scans no file at all (a guard against a misspelt path), and
+# this repository has no Ansible content for it to scan.
+skip = [
+  { name = "ha-restart-validated", reason = "this repository has no Ansible playbooks or roles to scan" },
+]
+
+[paths]
+vendored = []
+ansible_roots = ["roles", "playbooks"]
+
+[docs]
+# docs/RULES.md is this package's rulebook: DOCRULE-01 requires every rule the sources below can
+# emit to appear in it, and TRAPTAG-01 requires every bullet in its trap section to be tagged.
+rulebook = "docs/RULES.md"
+rule_sources = [
+  "src/ansible_devkit/checks/check_silent_guards.py",
+  "src/ansible_devkit/checks/check_agent_tree_writes.py",
+  "src/ansible_devkit/checks/check_molecule_verify.py",
+  "src/ansible_devkit/checks/check_defaults_resolved.py",
+]
+trap_section = "## Known traps in this codebase"
+
+[ci_coverage]
+# tests/test_*.py are the pytest entry points; .github/workflows/ci.yml must name each one.
+suite_dirs = ["tests"]
+workflow_dir = ".github/workflows"
+primary_workflow = ".github/workflows/ci.yml"
+
+[silent_guards]
+audit_doc = "docs/RULES.md"
+vendored_collections_dir = "collections"
+
+[regex_anchors]
+paths = ["src", "tests"]
+exclude_prefixes = [".venv/", "venv/", ".claude/worktrees/"]
+
+[agent_tree]
+tree_roots = []
+concat_roots = []
+config_dir_aliases = {}
+
+[ha_restart]
+supervisor_modules = []
+
+[molecule]
+selector = "src/ansible_devkit/scripts/affected-scenarios.sh"
+
+[trap_hits]
+log_dir = "var/trap-hits"
+
+[boundary]
+patterns = []

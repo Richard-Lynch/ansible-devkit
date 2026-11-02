@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+# trap-hit telemetry written by `devkit record-trap-hits` (devkit.toml [trap_hits])
+var/
+# a private pattern file or gate report must never be committed here
+.disclosure/
+# scratch worktrees (the regex-anchors suite writes a fixture here and removes it)
+.claude/worktrees/

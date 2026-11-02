@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The devkit.toml the test suites assume (tests/suites/_paths.py: use_fixture_config). Its values
+# are the ones the suites' fixtures were written against — an agent-writable tree rooted at
+# `{{ agent_config_dir }}/data`, a supervisor module under `acme.home`, a vendored collections
+# directory called collections.galaxy. None of them is a real estate; they are the shapes the
+# checkers must handle.
+
+[paths]
+vendored = ["roles.galaxy/", "collections.galaxy/", "/00-archive/"]
+ansible_roots = ["roles", "playbooks"]
+
+[docs]
+rulebook = "RULES.md"
+rule_sources = [
+  "../../../src/ansible_devkit/checks/check_silent_guards.py",
+  "../../../src/ansible_devkit/checks/check_agent_tree_writes.py",
+  "../../../src/ansible_devkit/checks/check_molecule_verify.py",
+]
+trap_section = "## Known traps in this codebase"
+
+[ci_coverage]
+suite_dirs = ["tests"]
+
+[silent_guards]
+audit_doc = "docs/AUDIT.md"
+vendored_collections_dir = "collections.galaxy"
+own_collections = "acme.utils"
+
+[regex_anchors]
+paths = ["scripts"]
+
+[agent_tree]
+tree_roots = [
+  '\{\{agent_config_dir\}\}/data',
+  '/opt/agent/data',
+  '\{\{(?:agent_state_root|agent_learning_home)\}\}',
+  '\{\{worker_state_dir\}\}/(?:cards/[^/]+/data|homes/[^/]+)',
+]
+concat_roots = [
+  "agent_config_dir\\s*~.*['\\\"]/data\\b",
+  '(?:agent_state_root|agent_learning_home)\s*~',
+]
+config_dir_aliases = { agent_config_dir = "/data" }
+helper_names = "scripts/safe_write.py"
+
+[ha_restart]
+supervisor_modules = ["acme.home.homeassistant_supervisor", "homeassistant_supervisor"]
+
+[molecule]
+selector = "ci/affected-scenarios.sh"
+
+[trap_hits]
+log_dir = "logs/trap-hits"
+
+[boundary]
+patterns = []

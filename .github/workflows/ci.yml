@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ci — the package's own gate: a frozen sync, the suites, and `devkit check all` on this repo.
+# GitHub-hosted runners only; every action pinned by commit SHA (the tag is a comment).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Sync from the lockfile (fails if uv.lock is stale)
+        run: uv sync --frozen
+      - name: Test suites
+        # Each tests/test_*.py entry point is named here on purpose: the ci-covers-hook-tests check
+        # (part of `devkit check all` below) requires every suite in tests/ to be run by a workflow.
+        run: uv run pytest -q tests/test_suites.py tests/test_cli.py
+      - name: devkit check all (self-check)
+        run: uv run devkit check all
+      - name: Formatting (black from the locked dev group)
+        run: uv run black --check --diff .

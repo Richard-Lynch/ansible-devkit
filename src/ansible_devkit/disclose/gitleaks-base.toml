@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Base gitleaks config for the DISCLOSURE gate (scripts/disclose/disclose.py; later devkit's).
+#
+# Deliberately NOT the scanned repository's own .gitleaks.toml. A private repo reasonably
+# allowlists its docs (they describe masked secret LOCATIONS) — exactly the wrong call for a
+# public push, where a doc is as public as any source file. So: gitleaks' default rules, and no
+# path allowlist at all. An exemption belongs in the publisher's allow file, with a reason.
+title = "disclosure base (default rules, no path allowlist)"
+
+[extend]
+useDefault = true

@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# devkit.toml.example — every key the checks read, with placeholder values. Copy it to the root
+# of your Ansible repository as `devkit.toml` and replace the placeholders.
+#
+# THE CONTRACT. A check resolves the repository as $DEVKIT_ROOT, else the git toplevel of the
+# working directory, and reads <root>/devkit.toml. A key marked REQUIRED has no default: a check
+# that needs it exits 2 naming the key rather than silently checking nothing. An empty list is the
+# explicit way to say "none here". Keys with a default are right for any repository that follows
+# the usual roles/ + playbooks/ layout; override them only if yours differs.
+#
+# THIS FILE WILL NAME YOUR ESTATE once filled in (the [boundary] patterns, the agent tree roots).
+# It belongs in your private repository; never copy it into a public one.
+
+[checks]
+# Gate checks `devkit check all` leaves out, each WITH a reason (three words or more); they are
+# printed as SKIPPED in the summary, so a skip is a recorded decision rather than a missing line.
+# A skip with no reason, or naming no gate, is a config error (exit 2).
+skip = [
+  # { name = "ha-restart-validated", reason = "no Home Assistant in this repository" },
+]
+
+[paths]
+# Vendored or archived trees: every YAML-walking check skips a path containing one of these.
+vendored = ["roles.galaxy/", "collections.galaxy/", "/archive/"]
+# Where the Ansible content lives (the default scan set when a check is given no paths).
+ansible_roots = ["roles", "playbooks"]
+
+[docs]
+# The rulebook: DOCRULE-01 requires every enforced rule ID to appear in it (as a `[FAIL X]` /
+# `[warn X]` tag or in backticks), and TRAPTAG-01 checks the tags in its trap section.
+rulebook = "RULES.md"
+# REQUIRED by docs-drift: the checkers whose `--list-rules` output defines the enforced rule set.
+# With devkit installed these are paths to its scripts, e.g. thin wrappers in your repo that
+# exec `devkit check <name>` and pass `--list-rules` through.
+rule_sources = [
+  "checks/check_silent_guards.py",
+  "checks/check_agent_tree_writes.py",
+  "checks/check_molecule_verify.py",
+]
+# REQUIRED by traps-are-checked: the heading that opens the trap section, read up to the next `## `.
+trap_section = "## Known traps in this codebase"
+
+[ci_coverage]
+# REQUIRED by ci-covers-hook-tests: directories whose test_*.py suites must each be run by a workflow.
+suite_dirs = ["tests"]
+workflow_dir = ".github/workflows"
+# Named in the fix hint: where a forgotten suite most likely belongs.
+primary_workflow = ".github/workflows/ci.yml"
+
+[silent_guards]
+# Printed with every summary: where the rule set is explained.
+audit_doc = "docs/SILENT_GUARD_AUDIT.md"
+# REQUIRED (MOLCOLL-01): the directory vendored collections are installed into. A molecule.yml
+# whose ANSIBLE_COLLECTIONS_PATH omits it resolves nothing vendored.
+vendored_collections_dir = "collections.galaxy"
+# Your own (non-vendored) collection namespace, named in the MOLCOLL-01 finding.
+own_collections = "example.utils"
+
+[regex_anchors]
+# REQUIRED (ICASE-01): the Python trees to scan, relative to the repo root.
+paths = ["scripts", "ci", "tools"]
+# Relative-path prefixes never scanned (a second checkout, a virtualenv).
+exclude_prefixes = ["venv/", ".venv/", ".claude/worktrees/"]
+
+[agent_tree]
+# REQUIRED (AGENTTREE-01), all three. Regexes over NORMALISED text (spaces inside {{ }} removed);
+# a write is flagged when its path continues below one of these with "/<more>". Empty lists mean
+# this repository has no agent-writable tree.
+tree_roots = [
+  '\{\{agent_config_dir\}\}/data',
+  '/opt/agent/data',
+]
+# Jinja concatenation onto a root, e.g. `agent_config_dir ~ ('/x' if c else '/data') ~ '/f'`.
+concat_roots = [
+  "agent_config_dir\\s*~.*['\\\"]/data\\b",
+]
+# var = suffix: a variable defined as `{{ var }}` (or `{{ var | default(...) }}`) is an alias, and
+# `{{ alias }}<suffix>` is a tree root too.
+config_dir_aliases = { agent_config_dir = "/data" }
+# The confined helpers a finding points at ("" names none).
+helper_names = "scripts/safe_write.py"
+
+[ha_restart]
+# REQUIRED: the Home Assistant Supervisor module, in every spelling plays use, whose core_check
+# must precede any core_restart/start/stop. Empty: no such module in this repository.
+supervisor_modules = ["example.home.homeassistant_supervisor", "homeassistant_supervisor"]
+
+[molecule]
+# REQUIRED (MOLVERIFY-05): the CI scenario selector, asked for its full-run answer. The packaged
+# one is src/ansible_devkit/scripts/affected-scenarios.sh; copy or symlink it into your repo.
+selector = "ci/affected-scenarios.sh"
+# Paths whose change makes the selector run EVERY scenario (on top of its generic list).
+selector_global_prefixes = ["lib/", "tools/", "scripts/"]
+
+[trap_hits]
+# record-trap-hits appends here (relative to the MAIN checkout); trap-report reads it.
+log_dir = "logs/trap-hits"
+# The variable that redirects both (a test suite points it at a temp dir).
+log_dir_env = "DEVKIT_TRAP_LOG_DIR"
+
+[boundary]
+# boundary-lint: REQUIRED. Estate facts that must not appear in ENGINE paths (roles/, playbooks/
+# logic). Use RFC 5737 / RFC 2606 examples in docs; the real values go here, privately.
+engine_roots = ["roles", "playbooks"]
+exempt_substr = ["/generated/", "/vars/", "/example/", "roles.galaxy/", "collections.galaxy/"]
+exempt_basenames = ["secrets.yml", "secrets.yaml"]
+patterns = [
+  { regex = '\b10\.(?:10|20|30)\.\d{1,3}\.\d{1,3}\b', label = "private VLAN IP" },
+  { regex = '\bexample\.invalid\b', label = "estate domain" },
+  { regex = '\b(?:node-a|node-b)\b', label = "real node hostname" },
+]

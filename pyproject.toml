@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[project]
+name = "ansible-devkit"
+version = "0.1.0"
+description = "Generic tooling for Ansible role repositories: an argspec generator, static checks against silent guards, and a disclosure gate for publishing from a private repository"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1",
+    "pydantic>=2",
+    "pyyaml>=6",
+    "ruamel.yaml>=0.18",
+]
+keywords = ["ansible", "argument_specs", "lint", "molecule", "disclosure"]
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.scripts]
+devkit = "ansible_devkit.cli:main"
+argspec = "ansible_devkit.argspec.cli:main"
+
+[dependency-groups]
+dev = [
+    "black>=25",
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ansible_devkit"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "devkit.toml.example"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/suites/ holds the stand-alone suites (each a script with its own PASS/FAIL report); pytest
+# runs them through tests/test_suites.py rather than collecting them as modules.
+addopts = "--ignore=tests/suites"
+
+[tool.black]
+line-length = 100
