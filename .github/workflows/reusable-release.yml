@@ -15,7 +15,7 @@
 #   on: {push: {branches: [main]}}
 #   jobs:
 #     release:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.2.0
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.2.1
 #       with: {kind: python}            # or kind: collection
 #       secrets: inherit                 # REQUIRED: without it the release environment's secrets arrive empty
 #
@@ -228,26 +228,23 @@ jobs:
           base=$(basename "$tarball" .tar.gz)          # <namespace>-<name>-<version>
           ns=${base%%-*}; rest=${base#*-}; name=${rest%-*}
           url="$api/v3/plugin/ansible/content/published/collections/index/$ns/$name/versions/$V/"
-          galaxy_sha() { curl -fsS "$url" | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact"]["sha256"])'; }
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+          galaxy_sha() { curl -fsS -L "$url" | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact"]["sha256"])'; }
+          code=$(curl -s -L -o /dev/null -w '%{http_code}' "$url")
           case "$code" in
             200) ;;
             404)
-              task=$(curl -fsS -H "Authorization: Token $GALAXY_API_KEY" \
-                -F "file=@$tarball" -F "sha256=$want" "$api/v3/artifacts/collections/" \
-                | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"])')
-              case "$task" in https://galaxy.ansible.com/*|/api/*) ;; *) echo "::error::unexpected import task '$task'"; exit 1 ;; esac
-              case "$task" in /*) task="https://galaxy.ansible.com$task" ;; esac
-              for _ in $(seq 1 60); do
-                state=$(curl -fsS -H "Authorization: Token $GALAXY_API_KEY" "$task" \
-                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))')
-                case "$state" in
-                  completed) break ;;
-                  failed) echo "::error::Galaxy import failed (see $task)"; exit 1 ;;
-                esac
+              # Upload, judged by its HTTP status alone: the response body is not relied on (an
+              # empty or non-JSON body after a successful upload once failed this step). Then poll
+              # the PUBLIC version endpoint until the import is visible.
+              up=$(curl -sS -L -o /dev/null -w '%{http_code}' -H "Authorization: Token $GALAXY_API_KEY" \
+                -F "file=@$tarball" -F "sha256=$want" "$api/v3/artifacts/collections/")
+              case "$up" in 2??) ;; *) echo "::error::Galaxy upload answered HTTP $up"; exit 1 ;; esac
+              for _ in $(seq 1 90); do
+                code=$(curl -s -L -o /dev/null -w '%{http_code}' "$url")
+                [ "$code" = 200 ] && break
                 sleep 10
               done
-              [ "$state" = completed ] || { echo "::error::Galaxy import did not complete (last state '$state')"; exit 1; } ;;
+              [ "$code" = 200 ] || { echo "::error::$ns.$name $V not visible on Galaxy 15 min after upload (HTTP $code)"; exit 1; } ;;
             *) echo "::error::cannot tell whether Galaxy has $ns.$name $V (HTTP $code)"; exit 1 ;;
           esac
           got=$(galaxy_sha)

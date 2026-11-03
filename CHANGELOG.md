@@ -4,6 +4,15 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.2.1] — 2026-11-03
+
+### Fixed
+
+- `reusable-release.yml` (`kind: collection`): the Galaxy upload is judged by its HTTP status and
+  completion by polling the public version endpoint, never by parsing a response body. A release
+  whose upload succeeded failed afterwards on an empty import-task response; a re-run then
+  completed it, after the sha256 check confirmed Galaxy held the built tarball.
+
 ## [0.2.0] — 2026-11-03
 
 ### Added
@@ -84,5 +93,6 @@ First release.
     `release` environment checks the artifact digests, publishes a collection
     to Galaxy, and creates the tag and GitHub release with a release-App token.
 
+[0.2.1]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.1.0
