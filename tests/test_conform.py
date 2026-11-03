@@ -71,6 +71,17 @@ CHANGELOG = """\
 """
 
 
+ROLE_META = """\
+---
+galaxy_info:
+  author: Someone
+  description: >-
+    Does one thing.
+  license: GPL-3.0-or-later
+dependencies: []
+"""
+
+
 def write(root: Path, rel: str, text: str) -> None:
     p = root / rel
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +115,9 @@ def repo(tmp_path: Path) -> Path:
         "plugins/module_utils/x.py",
         "# SPDX-License-Identifier: GPL-3.0-or-later\n",
     )
+    write(tmp_path, "roles/demo/README.md", "# demo\n")
+    write(tmp_path, "roles/demo/meta/main.yml", ROLE_META)
+    write(tmp_path, "roles/demo/tasks/main.yml", "---\n[]\n")
     shutil.copy(ROOT / "LICENSE", tmp_path / "LICENSE")
     stage(tmp_path)
     return tmp_path
@@ -559,6 +573,108 @@ def test_12_yml_spelling_fails(repo: Path) -> None:
     (repo / ".github/actionlint.yaml").rename(repo / ".github/actionlint.yml")
     stage(repo)
     assert rules(repo) == ["CONFORM-12"]
+
+
+# CONFORM-13 — every role in a collection has a README.md and a galaxy_info.description
+
+
+def test_13_role_without_readme_fails(repo: Path) -> None:
+    (repo / "roles/demo/README.md").unlink()
+    stage(repo)
+    assert [str(p) for p in conform.conform(repo)] == [
+        "roles/demo/README.md: CONFORM-13 missing (Galaxy rejects the import)"
+    ]
+
+
+def test_13_readme_in_the_wrong_place_fails(repo: Path) -> None:
+    (repo / "roles/demo/README.md").rename(repo / "roles/demo/meta/README.md")
+    stage(repo)
+    assert rules(repo) == ["CONFORM-13"]
+
+
+def test_13_role_without_meta_fails(repo: Path) -> None:
+    (repo / "roles/demo/meta/main.yml").unlink()
+    write(repo, "roles/demo/meta/argument_specs.yml", "---\nargument_specs: {}\n")
+    stage(repo)
+    assert [str(p) for p in conform.conform(repo)] == [
+        "roles/demo/meta/main.yml: CONFORM-13 missing (galaxy_info.description is read from it)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\ndependencies: []\n",
+        "---\ngalaxy_info:\n  author: Someone\n",
+        "---\ngalaxy_info:\n  description: ''\n",
+        "---\ngalaxy_info:\n  description: '   '\n",
+        "---\ngalaxy_info:\n  description: [a, b]\n",
+        "---\ngalaxy_info: a string\n",
+        "",
+    ],
+    ids=[
+        "no-galaxy_info",
+        "no-description",
+        "empty",
+        "blank",
+        "list",
+        "not-a-mapping",
+        "empty-file",
+    ],
+)
+def test_13_no_description_fails(repo: Path, text: str) -> None:
+    write(repo, "roles/demo/meta/main.yml", text)
+    stage(repo)
+    assert [str(p) for p in conform.conform(repo)] == [
+        "roles/demo/meta/main.yml: CONFORM-13 has no non-empty `galaxy_info.description`"
+    ]
+
+
+def test_13_meta_that_does_not_parse_fails(repo: Path) -> None:
+    write(repo, "roles/demo/meta/main.yml", "galaxy_info: [unclosed\n")
+    stage(repo)
+    problems = conform.conform(repo)
+    assert [p.rule for p in problems] == ["CONFORM-13"]
+    assert "does not parse" in problems[0].message and not problems[0].unchecked
+
+
+def test_13_every_role_is_checked(repo: Path) -> None:
+    write(repo, "roles/second/tasks/main.yml", "---\n[]\n")
+    stage(repo)
+    assert [str(p) for p in conform.conform(repo)] == [
+        "roles/second/README.md: CONFORM-13 missing (Galaxy rejects the import)",
+        "roles/second/meta/main.yml: CONFORM-13 missing (galaxy_info.description is read from it)",
+    ]
+
+
+def test_13_plain_description_and_extra_keys_pass(repo: Path) -> None:
+    write(
+        repo,
+        "roles/demo/meta/main.yml",
+        "---\ngalaxy_info:\n  role_name: demo\n  namespace: ex\n  description: Does one thing.\n"
+        "  min_ansible_version: '2.19'\n  galaxy_tags: [a]\ndependencies: []\n",
+    )
+    stage(repo)
+    assert rules(repo) == []
+
+
+def test_13_collection_without_roles_passes(repo: Path) -> None:
+    shutil.rmtree(repo / "roles")
+    stage(repo)
+    assert rules(repo) == []
+
+
+def test_13_file_under_roles_is_not_a_role(repo: Path) -> None:
+    write(repo, "roles/.keep", "")
+    stage(repo)
+    assert rules(repo) == []
+
+
+def test_13_python_repository_is_not_checked(repo: Path) -> None:
+    as_python_repo(repo, "x")
+    (repo / "roles/demo/README.md").unlink()
+    stage(repo)
+    assert "CONFORM-13" not in rules(repo)
 
 
 # The command: one line per problem, and the exit-code contract
