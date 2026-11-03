@@ -8,7 +8,13 @@ passed by path, which never lives in the repo being scanned.
 
 STEPS (each is a separate entry in the JSON report; any finding in any step fails the gate)
   1. manifest   the tree at SHA must equal the export manifest exactly — no unlisted file, no listed
-                file missing — and no path anywhere in the history may be unlisted either.
+                file missing — and no path anywhere in the history may be unlisted either. The one
+                exception (`--published <commit>`, an ancestor of SHA that is ALREADY public): a
+                path deleted since then is not unlisted history when every blob it ever held at
+                that path is one the published commit's history already carried at that path.
+                Without it, no release that deletes a file could pass, because the manifest must
+                equal the tree. A new blob at an old path, or a path that exists only in the new
+                commits, still fails; every other step scans the full history regardless.
   2. secrets    gitleaks over the full history with the base config passed in (NOT the repo's own
                 .gitleaks.toml, and with no docs/ exclusion), then trufflehog. Inline suppression
                 comments (gitleaks:allow, trufflehog:ignore) are not honoured.
@@ -372,17 +378,55 @@ def read_manifest(repo: Path, sha: str, manifest: Path | None) -> set[str]:
     return paths
 
 
+def history_pairs(repo: Path, *revs: str) -> set[tuple[str, str]]:
+    """Every (blob, path) pair in every commit reachable from `revs`, read tree by tree.
+
+    `rev-list --objects` names each blob ONCE, under the first path it meets, so a blob that also
+    sat at a second path would hide that path; walking each commit's tree does not.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for commit in git(repo, "rev-list", *revs).decode().split():
+        for entry in (
+            git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
+            .decode(errors="replace")
+            .split("\0")
+        ):
+            meta, _, path = entry.partition("\t")
+            parts = meta.split()
+            if path and len(parts) == 3 and parts[1] == "blob":
+                pairs.add((parts[2], path))
+    return pairs
+
+
+def resolve_published(repo: Path, sha: str, published: str) -> str:
+    """The already-public commit, which must be an ancestor of (or equal to) SHA."""
+    if not re.fullmatch(r"[0-9a-f]{40}", published):
+        raise GateError("--published must be the full 40-hex commit id")
+    if not git(repo, "rev-parse", "--verify", "--quiet", f"{published}^{{commit}}").strip():
+        raise GateError(f"--published {published} is not a commit in {repo}")
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", published, sha], check=False
+    )
+    if proc.returncode != 0:
+        raise GateError(f"--published {published} is not an ancestor of {sha}")
+    return published
+
+
 def step_manifest(
-    repo: Path, sha: str, manifest: set[str], objects: list[tuple[str, str]]
+    repo: Path, sha: str, manifest: set[str], published: str | None = None
 ) -> list[Finding]:
     tree = set(git(repo, "ls-tree", "-r", "--name-only", "-z", sha).decode().split("\0")) - {""}
     out = [Finding("manifest", "MANIFEST-01 unlisted file", p) for p in sorted(tree - manifest)]
     out += [
         Finding("manifest", "MANIFEST-02 listed file missing", p) for p in sorted(manifest - tree)
     ]
-    # A path that existed only in an earlier commit is still published with the history.
-    blob_paths = {p for _, p in objects}
-    for p in sorted(blob_paths - manifest - tree):
+    # A path that existed only in an earlier commit is still published with the history — unless
+    # that exact content at that exact path is already public (`--published`).
+    public = history_pairs(repo, published) if published else set()
+    unlisted = {
+        p for o, p in history_pairs(repo, "--all", sha) - public if p not in manifest | tree
+    }
+    for p in sorted(unlisted):
         out.append(Finding("manifest", "MANIFEST-03 unlisted path in history", p))
     return out
 
@@ -633,6 +677,12 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
         th_exe = _tool("trufflehog", allow_missing, report)
 
         manifest = read_manifest(repo, sha, Path(args.manifest) if args.manifest else None)
+        published = resolve_published(repo, sha, args.published) if args.published else None
+        if published:
+            report.notes.append(
+                f"--published {published}: paths deleted since, with only already-public blobs, "
+                "are exempt from MANIFEST-03"
+            )
         objects = all_objects(repo, sha)
 
         findings: list[Finding] = []
@@ -643,7 +693,7 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
             findings.extend(got)
             report.steps[name].update(status="fail" if got else "pass", findings=len(got))
 
-        step("manifest", lambda: step_manifest(repo, sha, manifest, objects))
+        step("manifest", lambda: step_manifest(repo, sha, manifest, published))
         step(
             "secrets",
             lambda: (
@@ -711,6 +761,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--gitleaks-config", help=f"default: {DEFAULT_GITLEAKS_CONFIG.name}")
     ap.add_argument("--allow-missing", action="append", metavar="TOOL")
     ap.add_argument("--report", help="write the JSON report here (default: stdout)")
+    ap.add_argument(
+        "--published",
+        metavar="COMMIT",
+        help="an ancestor of SHA that is already public (the remote's main): a path deleted since, "
+        "whose every blob it already carried, is not MANIFEST-03",
+    )
     args = ap.parse_args(argv)
 
     rc, report = run(args)

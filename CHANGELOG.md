@@ -4,6 +4,25 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.2.3] — 2026-11-03
+
+### Added
+
+- `devkit disclose --published <commit>`: an ancestor of the scanned commit that is already
+  public. A path deleted since then is not reported as `MANIFEST-03` (unlisted path in history)
+  when every blob it held at that path is one the published commit's history already carried
+  there. Without it, no change that deletes a file could pass, because the manifest must equal
+  the tree. A new blob at an old path, or a path added and deleted after the published commit,
+  still fails; every other step scans the full history unchanged. A short, unknown or
+  non-ancestor `--published` is an error, never a pass.
+- `reusable-disclose.yml` passes the pull request's base commit as `--published` when the base is
+  the default branch; any other base gets no exemption.
+
+### Fixed
+
+- `MANIFEST-03` walks every commit's tree, so a blob that also sat at a second path no longer
+  hides that path (`git rev-list --objects` names a blob once).
+
 ## [0.2.2] — 2026-11-03
 
 ### Added

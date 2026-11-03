@@ -227,6 +227,43 @@ def gate_cases(e: Env) -> None:
         "a path only in HISTORY must be listed too",
     )
 
+    # --published: content already public at a path the new commit deletes is not unlisted history
+    # (docs/standards/CHANGING_THE_RULES.md: the case it exempts, and each near-miss it must not).
+    def parent(r: Path, rev: str) -> str:
+        return subprocess.run(["git", "-C", str(r), "rev-parse", rev], check=True,
+                              capture_output=True, text=True).stdout.strip()  # fmt: skip
+
+    r, sha = e.repo(CLEAN, history=[{"old/leftover.cfg": "x = 1\n"}])
+    rc, rep, out = e.run(r, sha, "--published", parent(r, "HEAD~1"))
+    check(
+        rc == 0,
+        f"--published: a deleted path whose blob is already public PASSES (rc={rc})",
+    )
+    r, sha = e.repo(
+        CLEAN, history=[{"old/leftover.cfg": "x = 1\n"}, {"old/leftover.cfg": "x = 2\n"}]
+    )
+    rc, rep, _ = e.run(r, sha, "--published", parent(r, "HEAD~2"))
+    check(
+        rc == 1 and "MANIFEST-03 unlisted path in history" in rules(rep),
+        "--published: the same path with a NEW blob since the published commit FAILS",
+    )
+    r, sha = e.repo(CLEAN, history=[{"old/public.cfg": "p\n"}, {"new/branch_only.cfg": "b\n"}])
+    rc, rep, _ = e.run(r, sha, "--published", parent(r, "HEAD~2"))
+    locs = {f["location"] for f in rep.get("findings", []) if f["rule"].startswith("MANIFEST-03")}
+    check(
+        rc == 1 and locs == {"new/branch_only.cfg"},
+        f"--published: a path added AND deleted after the published commit FAILS, the public one does not ({locs})",
+    )
+    r2, sha2 = e.repo(CLEAN)
+    other = parent(r2, "HEAD")
+    rc, rep, _ = e.run(r, sha, "--published", sha[:12])
+    check(rc == 2, "--published: a short commit id is an error, not a pass")
+    rc, rep, _ = e.run(r2, sha2, "--published", parent(r, "HEAD~2"))
+    check(rc == 2, "--published: a commit that is not in the repo is an error, not a pass")
+    subprocess.run(["git", "-C", str(r), "fetch", "-q", str(r2), "main"], check=True)
+    rc, rep, _ = e.run(r, sha, "--published", other)
+    check(rc == 2, "--published: a commit that is not an ANCESTOR of SHA is an error, not a pass")
+
     r, sha = e.repo(CLEAN, email=OWNER_EMAIL)
     rc, rep, _ = e.run(r, sha)
     check(

@@ -35,10 +35,10 @@ Releases are git tags; there is no PyPI package. Pin a tag:
 
 ```sh
 # as a tool (puts `devkit` and `argspec` on PATH)
-uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.2
+uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.3
 
 # or as a dev dependency of your Ansible repository
-uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.2"
+uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.3"
 ```
 
 Python 3.12 or newer. `devkit disclose` also needs `gitleaks` and `trufflehog`
@@ -98,8 +98,8 @@ A new collection repository that already conforms comes from the copier
 template (`copier.yml` at this repository's root, files under `template/`):
 
 ```sh
-uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.2.2"
-copier copy --vcs-ref v0.2.2 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
+uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.2.3"
+copier copy --vcs-ref v0.2.3 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
 cd ansible-collection-demo && git init -q && git add -A && devkit conform
 ```
 
@@ -114,8 +114,13 @@ ansible-core versions CI tests and the devkit tag the workflows call, and writes
 ```sh
 devkit disclose --repo /path/to/export --sha <full sha> \
   --patterns /private/patterns.json --secrets-cache /private/cache.json \
-  [--manifest export.manifest] [--allow allow.txt] [--tarball built.tar.gz] [--report out.json]
+  [--manifest export.manifest] [--allow allow.txt] [--tarball built.tar.gz] [--report out.json] \
+  [--published <already-public ancestor commit>]
 ```
+
+`--published` names a commit that is already public (a pull request's base on the default
+branch): a path deleted since then is not unlisted history while every blob it held there is
+already public.
 
 The pattern file is JSON —
 `{"patterns": [{"id": "...", "kind": "literal", "value": "..."}, {"id": "...", "kind": "regex", "regex": "..."}]}`
