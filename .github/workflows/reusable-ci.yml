@@ -12,6 +12,7 @@
 #       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.1.0
 #       with: {kind: python}            # or kind: collection
 #
+# every kind       actionlint over the caller's workflows (reads the caller's .github/actionlint.yaml).
 # kind=python      uv sync --frozen, the suites, `devkit check all`, black.
 # kind=collection  for each ansible-core in `ansible_core` (JSON list): `ansible-test sanity` and,
 #                  when tests/unit exists, `ansible-test units` (both --docker), with the repo checked
@@ -37,7 +38,29 @@ on:
 permissions:
   contents: read
 
+env:
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
 jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned, checksummed)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o actionlint.tgz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
+          tar -xzf actionlint.tgz -C "$HOME/bin" actionlint
+          rm -f actionlint.tgz
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: actionlint
+        run: actionlint -color
+
   python:
     if: inputs.kind == 'python'
     runs-on: ubuntu-latest
@@ -87,7 +110,9 @@ jobs:
       fail-fast: false
       matrix:
         ansible_core: ${{ fromJSON(inputs.ansible_core) }}
-    name: collection (ansible-core ${{ matrix.ansible_core }})
+    # A fixed name: a skipped matrix job is never expanded, so a name built from the matrix would
+    # show unrendered. GitHub appends the matrix value to the check name of each expanded job.
+    name: collection
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,10 +127,10 @@ jobs:
           set -euo pipefail
           [[ "$V" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::bad ansible-core version '$V'"; exit 1; }
           python -m pip install --disable-pip-version-check "ansible-core==${V}.*"
-      - name: ansible-test sanity
+      - name: ansible-test sanity (ansible-core ${{ matrix.ansible_core }})
         working-directory: ${{ needs.collection-meta.outputs.path }}
         run: ansible-test sanity --docker -v --color
-      - name: ansible-test units
+      - name: ansible-test units (ansible-core ${{ matrix.ansible_core }})
         working-directory: ${{ needs.collection-meta.outputs.path }}
         run: |
           set -euo pipefail
@@ -134,19 +159,21 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [python, collection-meta, collection, collection-devkit]
+    needs: [actionlint, python, collection-meta, collection, collection-devkit]
     runs-on: ubuntu-latest
     steps:
       - name: Every part of this kind succeeded
         env:
           KIND: ${{ inputs.kind }}
+          AL: ${{ needs.actionlint.result }}
           PY: ${{ needs.python.result }}
           META: ${{ needs.collection-meta.result }}
           COL: ${{ needs.collection.result }}
           DK: ${{ needs.collection-devkit.result }}
         run: |
           set -euo pipefail
-          echo "kind=$KIND python=$PY collection-meta=$META collection=$COL collection-devkit=$DK"
+          echo "kind=$KIND actionlint=$AL python=$PY collection-meta=$META collection=$COL collection-devkit=$DK"
+          [ "$AL" = success ] || { echo "::error::actionlint did not succeed"; exit 1; }
           case "$KIND" in
             python)     [ "$PY" = success ] ;;
             collection) [ "$META" = success ] && [ "$COL" = success ] && [ "$DK" = success ] ;;

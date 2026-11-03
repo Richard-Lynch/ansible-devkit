@@ -4,6 +4,23 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [Unreleased]
+
+### Added
+
+- **`reusable-ci.yml`**: an `actionlint` job for every kind, from a pinned release
+  tarball whose sha256 is verified; it reads the caller's
+  `.github/actionlint.yaml`. `ci / gate` requires it, so the caller-facing
+  check name is unchanged.
+
+### Changed
+
+- **`reusable-ci.yml`**: the collection matrix job is named `collection` (the
+  ansible-core version is in its step names and the expanded check names), so
+  the job no longer shows an unrendered matrix expression when it is skipped.
+- **Build backend pinned exactly**: `[build-system] requires` is
+  `hatchling==1.33.0`, so a build is reproducible from the repository alone.
+
 ## [0.1.0] — 2026-11-02
 
 First release.
@@ -48,4 +65,5 @@ First release.
     `release` environment checks the artifact digests, publishes a collection
     to Galaxy, and creates the tag and GitHub release with a release-App token.
 
+[Unreleased]: https://github.com/Richard-Lynch/ansible-devkit/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.1.0
