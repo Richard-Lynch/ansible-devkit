@@ -146,8 +146,17 @@ jobs:
           # --published: the PR's base is the protected default branch, i.e. already public, so a
           # path the PR DELETES is not "unlisted history" while every blob it held there is already
           # public. Only for a PR into the default branch; any other base gets no exemption.
+          # The TRUSTED devkit may predate --published (a devkit PR is judged by its BASE commit's
+          # devkit), so the flag is passed only when that devkit offers it; without it there is no
+          # exemption, which is the old, stricter behaviour. Help text is captured, not piped into
+          # grep -q, which under pipefail can invert the test.
+          help=$(uv run --frozen --no-dev --project devkit devkit disclose --help)
+          supports=false
+          case "$help" in *--published*) supports=true ;; esac
           published=()
-          if [ "$BASE_REF" = "$DEFAULT_BRANCH" ] && [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          if [ "$supports" != true ]; then
+            echo "trusted devkit has no --published: no MANIFEST-03 exemption"
+          elif [ "$BASE_REF" = "$DEFAULT_BRANCH" ] && [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             published=(--published "$BASE_SHA")
             echo "published (already-public) base: $BASE_SHA"
           else
