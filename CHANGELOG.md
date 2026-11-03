@@ -11,8 +11,9 @@ All notable changes to `ansible-devkit`. The format follows
 - **`devkit conform [--path DIR]`**: checks a repository against the
   public-repository standard and prints one line per problem (rules
   `CONFORM-01`..`CONFORM-12`, listed in `docs/RULES.md`): the `ci`, `disclose`
-  and `release` callers with the right job ids, `uses:` target, release-tag ref,
-  `kind`, secrets and triggers; a GPL-3.0 `LICENSE`; a `CHANGELOG.md` section
+  and `release` callers with the right job ids, `uses:` target (a local
+  reusable workflow only in ansible-devkit itself), release-tag ref, `kind`,
+  secrets, and triggers with no filter or job `if:` that could skip the gate; a GPL-3.0 `LICENSE`; a `CHANGELOG.md` section
   for the declared version; `export.manifest` equal to `git ls-files`; SPDX
   headers on tracked `.py` files; `.github/actionlint.yaml`. Exits 2 when a rule
   could not be evaluated, such as outside a git repository.

@@ -191,12 +191,12 @@ unreadable file). Each rule has a failing fixture and a passing near-miss in
 | Rule       | The repository must have                                                                                                                   |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | CONFORM-01 | `.github/workflows/ci.yml`, `disclose.yml` and `release.yml`, each a YAML mapping                                                          |
-| CONFORM-02 | exactly one job in each, with the id `ci` / `disclose` / `release` (the id names the required check, e.g. `ci / gate`)                     |
-| CONFORM-03 | that job calling `Richard-Lynch/ansible-devkit/.github/workflows/reusable-<id>.yml` (`./.github/workflows/...` only where that file exists) |
-| CONFORM-04 | the `uses:` ref a release tag, `vMAJOR.MINOR.PATCH` — a branch moves under the caller                                                      |
+| CONFORM-02 | exactly one job in each, a mapping, with the id `ci` / `disclose` / `release` (the id names the required check, e.g. `ci / gate`) |
+| CONFORM-03 | that job calling `Richard-Lynch/ansible-devkit/.github/workflows/reusable-<id>.yml` (the local `./.github/workflows/...` form only in ansible-devkit itself: a local "reusable" workflow is whatever the repository says it is, and receives its secrets) |
+| CONFORM-04 | the `uses:` ref a release tag, `vMAJOR.MINOR.PATCH` — a branch moves under the caller. A tag rather than a commit SHA is deliberate: ansible-devkit's `v*` tags are immutable by repository ruleset (only the owner may update or delete one), so a tag is as fixed as a SHA and still readable |
 | CONFORM-05 | `kind:` on ci and release matching the repository (`galaxy.yml`: collection, `pyproject.toml`: python); ci's `ansible_core`, if given, a JSON list of `"X.Y"` |
 | CONFORM-06 | `secrets: inherit` on release; `DISCLOSE_PATTERNS` and `DISCLOSE_ALLOW` passed from `secrets.` on disclose                                 |
-| CONFORM-07 | ci on push to main and `pull_request`; release on push to main; disclose on `pull_request` types opened, synchronize, reopened, edited     |
+| CONFORM-07 | ci on push to main and `pull_request`; release on push to main; disclose on `pull_request` types opened, synchronize, reopened, edited — `on.push` exactly `branches: [main]`, `on.pull_request` filtered by nothing but `types` (no paths, branches or ignores), and no `if:` on the caller job: each would let a change skip the gate |
 | CONFORM-08 | `LICENSE` the GPL-3.0 text (compared with whitespace normalised)                                                                           |
 | CONFORM-09 | a non-empty `## [<version>]` section in `CHANGELOG.md` for the version `galaxy.yml` (else `pyproject.toml`) declares                       |
 | CONFORM-10 | `export.manifest` listing exactly the paths `git ls-files` lists                                                                           |

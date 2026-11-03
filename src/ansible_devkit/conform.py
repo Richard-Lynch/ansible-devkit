@@ -8,14 +8,15 @@ package's template (copier.yml, template/) generates:
   CONFORM-02  each has exactly one job, with the id `ci` / `disclose` / `release` (the required
               status checks are `ci / gate` and `disclose / gate`)
   CONFORM-03  that job `uses:` the matching ansible-devkit reusable workflow
-              (`./.github/workflows/reusable-<x>.yml` only in a repository that has that file)
+              (`./.github/workflows/reusable-<x>.yml` only in ansible-devkit itself)
   CONFORM-04  the `uses:` ref is a release tag, vMAJOR.MINOR.PATCH — never a branch
   CONFORM-05  ci and release pass `kind:` matching the repository (galaxy.yml: collection,
               pyproject.toml: python); ci's `ansible_core`, when given, is a JSON list of "X.Y"
   CONFORM-06  release passes `secrets: inherit`; disclose passes DISCLOSE_PATTERNS and
               DISCLOSE_ALLOW from the repository's secrets
   CONFORM-07  triggers: ci on push to main and pull_request; release on push to main; disclose on
-              pull_request types opened, synchronize, reopened and edited
+              pull_request types opened, synchronize, reopened and edited — with no other filter
+              (paths, branches-ignore, a second branch ...) and no `if:` on the caller job
   CONFORM-08  LICENSE is the GPL-3.0 text
   CONFORM-09  CHANGELOG.md has a non-empty `## [<version>]` section for the declared version
               (galaxy.yml `version`, else pyproject.toml `[project].version`)
@@ -99,38 +100,86 @@ def _triggers(doc: dict) -> dict:
     return on if isinstance(on, dict) else {}
 
 
-def _branches(trigger: object) -> list:
-    if isinstance(trigger, dict):
-        b = trigger.get("branches")
-        return b if isinstance(b, list) else [b] if isinstance(b, str) else []
+# The only trigger filters the standard has. Anything else (branches-ignore, paths, paths-ignore,
+# tags, a second branch, a narrower `types`) lets a change reach main without the gate running, or
+# runs a release from a branch that is not main.
+PR_DEFAULT_TYPES = ("opened", "synchronize", "reopened")
+
+
+def _as_list(v: object) -> list | None:
+    if isinstance(v, str):
+        return [v]
+    return v if isinstance(v, list) else None
+
+
+def _check_push_main(events: dict, rel: str) -> list[Problem]:
+    if "push" not in events:
+        return [Problem(rel, "CONFORM-07", "does not run on push (the standard: branches [main])")]
+    push = events["push"]
+    if not isinstance(push, dict) or _as_list(push.get("branches")) != ["main"]:
+        return [Problem(rel, "CONFORM-07", "`on.push` must be exactly `branches: [main]`")]
+    extra = sorted(str(k) for k in push if k != "branches")
+    if extra:
+        return [
+            Problem(
+                rel, "CONFORM-07", f"`on.push` has filters beyond the standard: {', '.join(extra)}"
+            )
+        ]
     return []
+
+
+def _check_pull_request(events: dict, rel: str, required_types: tuple[str, ...]) -> list[Problem]:
+    if "pull_request" not in events:
+        return [Problem(rel, "CONFORM-07", "does not run on pull_request")]
+    pr = events["pull_request"]
+    if pr is None:
+        pr = {}
+    if not isinstance(pr, dict):
+        return [Problem(rel, "CONFORM-07", "`on.pull_request` is not a mapping")]
+    out: list[Problem] = []
+    extra = sorted(str(k) for k in pr if k != "types")
+    if extra:
+        out.append(
+            Problem(
+                rel,
+                "CONFORM-07",
+                f"`on.pull_request` has filters beyond the standard: {', '.join(extra)}",
+            )
+        )
+    types = _as_list(pr["types"]) if "types" in pr else list(PR_DEFAULT_TYPES)
+    missing = [t for t in required_types if t not in (types or [])]
+    if missing:
+        out.append(
+            Problem(
+                rel,
+                "CONFORM-07",
+                "pull_request types must include "
+                + ", ".join(required_types)
+                + f" (missing: {', '.join(missing)})",
+            )
+        )
+    return out
 
 
 def _check_triggers(c: Caller, events: dict, rel: str) -> list[Problem]:
     out: list[Problem] = []
-    if c.job in ("ci", "release") and "main" not in _branches(events.get("push")):
-        out.append(Problem(rel, "CONFORM-07", "`on.push.branches` does not include main"))
-    if c.job == "ci" and "pull_request" not in events:
-        out.append(Problem(rel, "CONFORM-07", "does not run on pull_request"))
+    if c.job in ("ci", "release"):
+        out += _check_push_main(events, rel)
+    if c.job == "ci":
+        out += _check_pull_request(events, rel, PR_DEFAULT_TYPES)
     if c.job == "disclose":
-        pr = events.get("pull_request")
-        if "pull_request" not in events:
-            out.append(Problem(rel, "CONFORM-07", "does not run on pull_request"))
-        else:
-            types = pr.get("types") if isinstance(pr, dict) else None
-            types = [types] if isinstance(types, str) else types if isinstance(types, list) else []
-            missing = [t for t in DISCLOSE_TYPES if t not in types]
-            if missing:
-                out.append(
-                    Problem(
-                        rel,
-                        "CONFORM-07",
-                        "pull_request types must include "
-                        + ", ".join(DISCLOSE_TYPES)
-                        + f" (missing: {', '.join(missing)})",
-                    )
-                )
+        out += _check_pull_request(events, rel, DISCLOSE_TYPES)
     return out
+
+
+def _is_devkit(root: Path) -> bool:
+    """True only for ansible-devkit itself, the one repository that calls its own copies."""
+    try:
+        doc = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return False
+    project = doc.get("project")
+    return isinstance(project, dict) and project.get("name") == "ansible-devkit"
 
 
 def _check_uses(root: Path, c: Caller, uses: object, rel: str) -> list[Problem]:
@@ -144,13 +193,16 @@ def _check_uses(root: Path, c: Caller, uses: object, rel: str) -> list[Problem]:
             )
         ]
     if uses == f"./{reusable}":
-        if (root / reusable).is_file():
+        # A local "reusable" workflow is whatever the repository says it is, and it receives the
+        # caller's secrets: only ansible-devkit, whose copy IS the shared workflow, may use one.
+        if _is_devkit(root) and (root / reusable).is_file():
             return []
         return [
             Problem(
                 rel,
                 "CONFORM-03",
-                f"`uses: {uses}` but this repository has no {reusable}",
+                f"`uses: {uses}` is a local workflow; only ansible-devkit may call its own copy "
+                f"(call {DEVKIT_REPO}/{reusable}@<tag>)",
             )
         ]
     target, sep, ref = uses.partition("@")
@@ -267,7 +319,15 @@ def check_callers(root: Path) -> list[Problem]:
                 )
             )
         job = jobs.get(c.job)
+        if c.job in jobs and not isinstance(job, dict):
+            out.append(Problem(rel, "CONFORM-02", f"job `{c.job}` is not a mapping"))
         if isinstance(job, dict):
+            if "if" in job:
+                out.append(
+                    Problem(
+                        rel, "CONFORM-07", f"job `{c.job}` has an `if:`, which can skip the gate"
+                    )
+                )
             out += _check_uses(root, c, job.get("uses"), rel)
             out += _check_with(c, job, kind, rel)
             out += _check_secrets(c, job, rel)

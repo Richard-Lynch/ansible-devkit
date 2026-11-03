@@ -186,15 +186,55 @@ def test_03_local_reusable_without_the_file_fails(repo: Path) -> None:
     assert rules(repo) == ["CONFORM-03"]
 
 
-def test_03_local_reusable_with_the_file_passes(repo: Path) -> None:
-    text = CI.replace(
-        "Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.2.0",
-        "./.github/workflows/reusable-ci.yml",
-    )
-    write(repo, ".github/workflows/ci.yml", text)
+LOCAL_CI = CI.replace(
+    "Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.2.0",
+    "./.github/workflows/reusable-ci.yml",
+)
+
+
+def as_python_repo(root: Path, name: str) -> None:
+    (root / "galaxy.yml").unlink()
+    write(root, "pyproject.toml", f'[project]\nname = "{name}"\nversion = "1.2.0"\n')
+    for wf, text in (("ci", LOCAL_CI), ("release", RELEASE)):
+        text = text.replace("kind: collection", "kind: python")
+        text = text.replace('      ansible_core: \'["2.20", "2.21"]\'\n', "")
+        write(root, f".github/workflows/{wf}.yml", text)
+    write(root, ".github/workflows/reusable-ci.yml", "name: reusable-ci\n")
+    stage(root)
+
+
+def test_03_local_reusable_in_another_repository_fails_even_with_the_file(repo: Path) -> None:
+    # A repository's own "reusable" workflow is whatever it says it is, and receives its secrets.
+    write(repo, ".github/workflows/ci.yml", LOCAL_CI)
     write(repo, ".github/workflows/reusable-ci.yml", "name: reusable-ci\n")
     stage(repo)
+    assert rules(repo) == ["CONFORM-03"]
+
+
+def test_03_local_reusable_in_a_lookalike_python_repository_fails(repo: Path) -> None:
+    as_python_repo(repo, "ansible-devkit-fork")
+    assert rules(repo) == ["CONFORM-03"]
+
+
+def test_03_local_reusable_in_ansible_devkit_passes(repo: Path) -> None:
+    as_python_repo(repo, "ansible-devkit")
     assert rules(repo) == []
+
+
+def test_03_job_without_uses_fails(repo: Path) -> None:
+    text = RELEASE.replace(
+        "    uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.2.0\n",
+        "",
+    )
+    write(repo, ".github/workflows/release.yml", text)
+    assert rules(repo) == ["CONFORM-03"]
+
+
+@pytest.mark.parametrize("value", ["null", "[]", "'a string'"])
+def test_02_job_that_is_not_a_mapping_fails(repo: Path, value: str) -> None:
+    text = DISCLOSE[: DISCLOSE.index("jobs:")] + f"jobs:\n  disclose: {value}\n"
+    write(repo, ".github/workflows/disclose.yml", text)
+    assert rules(repo) == ["CONFORM-02"]
 
 
 # CONFORM-04 — the ref is a release tag
@@ -309,6 +349,65 @@ def test_07_ci_without_pull_request_fails(repo: Path) -> None:
 def test_07_release_on_another_branch_fails(repo: Path) -> None:
     write(repo, ".github/workflows/release.yml", RELEASE.replace("[main]", "[develop]"))
     assert rules(repo) == ["CONFORM-07"]
+
+
+@pytest.mark.parametrize(
+    "workflow, base, filt",
+    [
+        ("disclose", DISCLOSE, "    paths: [plugins/**]\n"),
+        ("disclose", DISCLOSE, "    paths-ignore: [docs/**]\n"),
+        ("disclose", DISCLOSE, "    branches: [main]\n"),
+        ("disclose", DISCLOSE, "    branches-ignore: [release/**]\n"),
+        ("ci", CI, "    paths-ignore: ['**.md']\n"),
+        ("ci", CI, "    branches-ignore: [wip/**]\n"),
+        ("ci", CI, "    tags: [v*]\n"),
+    ],
+)
+def test_07_trigger_filter_beyond_the_standard_fails(
+    repo: Path, workflow: str, base: str, filt: str
+) -> None:
+    # Insert the filter under the trigger the test names (pull_request for disclose, push for ci).
+    key = "  pull_request:\n" if workflow == "disclose" else "    branches: [main]\n"
+    text = base.replace(key, key + filt, 1)
+    assert text != base
+    write(repo, f".github/workflows/{workflow}.yml", text)
+    assert rules(repo) == ["CONFORM-07"]
+
+
+def test_07_ci_pull_request_filter_fails(repo: Path) -> None:
+    text = CI.replace("  pull_request:\n", "  pull_request:\n    paths: [plugins/**]\n")
+    write(repo, ".github/workflows/ci.yml", text)
+    assert rules(repo) == ["CONFORM-07"]
+
+
+def test_07_ci_narrowed_types_fail(repo: Path) -> None:
+    text = CI.replace("  pull_request:\n", "  pull_request:\n    types: [opened]\n")
+    write(repo, ".github/workflows/ci.yml", text)
+    assert rules(repo) == ["CONFORM-07"]
+
+
+def test_07_release_from_a_second_branch_fails(repo: Path) -> None:
+    write(repo, ".github/workflows/release.yml", RELEASE.replace("[main]", "[main, next]"))
+    assert rules(repo) == ["CONFORM-07"]
+
+
+@pytest.mark.parametrize(
+    "workflow, base", [("ci", CI), ("disclose", DISCLOSE), ("release", RELEASE)]
+)
+def test_07_if_on_the_caller_job_fails(repo: Path, workflow: str, base: str) -> None:
+    key = f"  {workflow}:\n"
+    text = base.replace(key, key + "    if: github.actor != 'someone'\n", 1)
+    write(repo, f".github/workflows/{workflow}.yml", text)
+    assert rules(repo) == ["CONFORM-07"]
+
+
+def test_07_ci_explicit_default_types_and_extra_event_pass(repo: Path) -> None:
+    text = CI.replace(
+        "  pull_request:\n",
+        "  pull_request:\n    types: [opened, synchronize, reopened]\n  workflow_dispatch:\n",
+    )
+    write(repo, ".github/workflows/ci.yml", text)
+    assert rules(repo) == []
 
 
 def test_07_reordered_extra_types_and_scalar_branch_pass(repo: Path) -> None:
