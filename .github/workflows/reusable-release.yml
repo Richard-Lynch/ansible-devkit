@@ -17,7 +17,7 @@
 #     release:
 #       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.1.0
 #       with: {kind: python}            # or kind: collection
-#       (the release environment's secrets reach the publish job directly; nothing is passed)
+#       secrets: inherit                 # REQUIRED: without it the release environment's secrets arrive empty
 #
 # kind=python      reads [project].version from pyproject.toml; build = verify + `uv build`.
 # kind=collection  reads version from galaxy.yml; build = `ansible-galaxy collection build`; publish
