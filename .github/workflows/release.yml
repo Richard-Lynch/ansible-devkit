@@ -16,5 +16,8 @@ jobs:
     uses: ./.github/workflows/reusable-release.yml
     with:
       kind: python
+    # The publish job's `release`-environment secrets reach a reusable workflow only when the
+    # caller passes secrets through; without this the App key arrives empty.
+    secrets: inherit
     permissions:
       contents: read
