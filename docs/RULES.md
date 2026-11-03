@@ -202,3 +202,4 @@ unreadable file). Each rule has a failing fixture and a passing near-miss in
 | CONFORM-10 | `export.manifest` listing exactly the paths `git ls-files` lists                                                                           |
 | CONFORM-11 | `SPDX-License-Identifier: GPL-3.0-or-later` in the first five lines of every tracked `.py` file                                            |
 | CONFORM-12 | `.github/actionlint.yaml` (the reusable CI's actionlint job reads it)                                                                      |
+| CONFORM-13 | in a collection, a `README.md` and a `meta/main.yml` with a non-empty `galaxy_info.description` in every `roles/<role>/` (Galaxy's importer rejects a role with no README and lists one with no description without it; build and upload both succeed) |

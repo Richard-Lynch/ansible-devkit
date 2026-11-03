@@ -4,6 +4,16 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.2.2] — 2026-11-03
+
+### Added
+
+- `devkit conform` rule **`CONFORM-13`**: in a collection, every `roles/<role>/` has a
+  `README.md` and a `meta/main.yml` whose `galaxy_info.description` is a non-empty string.
+  Galaxy's importer fails a collection containing a role with no README, and shows no
+  description for a role without one; neither stops `ansible-galaxy collection build` or the
+  upload, so both otherwise surface only in the import result after the release has run.
+
 ## [0.2.1] — 2026-11-03
 
 ### Fixed
@@ -93,6 +103,7 @@ First release.
     `release` environment checks the artifact digests, publishes a collection
     to Galaxy, and creates the tag and GitHub release with a release-App token.
 
+[0.2.2]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.1.0

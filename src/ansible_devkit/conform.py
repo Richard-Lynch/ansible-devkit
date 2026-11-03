@@ -24,6 +24,9 @@ package's template (copier.yml, template/) generates:
   CONFORM-11  every tracked .py file carries `SPDX-License-Identifier: GPL-3.0-or-later` in its
               first lines
   CONFORM-12  .github/actionlint.yaml exists (the reusable CI's actionlint job reads it)
+  CONFORM-13  in a collection, every roles/<role>/ has a README.md and a meta/main.yml whose
+              galaxy_info.description is a non-empty string (Galaxy's importer rejects a role with
+              no README, and shows no description for a role without one)
 
 One line per problem on stdout, `<path>: <RULE> <message>`. Exit 0 when the repository meets the
 standard, 1 when it does not, 2 when a rule could not be evaluated (no git repository, an
@@ -463,6 +466,43 @@ def check_actionlint(root: Path) -> list[Problem]:
     return [Problem(".github/actionlint.yaml", "CONFORM-12", "missing")]
 
 
+def _role_description(meta: Path, rel: str) -> list[Problem]:
+    if not meta.is_file():
+        return [Problem(rel, "CONFORM-13", "missing (galaxy_info.description is read from it)")]
+    try:
+        doc = yaml.safe_load(meta.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        return [Problem(rel, "CONFORM-13", f"unreadable: {exc}", unchecked=True)]
+    except yaml.YAMLError as exc:
+        return [Problem(rel, "CONFORM-13", f"does not parse: {exc}".splitlines()[0])]
+    info = doc.get("galaxy_info") if isinstance(doc, dict) else None
+    description = info.get("description") if isinstance(info, dict) else None
+    if not isinstance(description, str) or not description.strip():
+        return [Problem(rel, "CONFORM-13", "has no non-empty `galaxy_info.description`")]
+    return []
+
+
+def check_roles(root: Path) -> list[Problem]:
+    """Every role of a collection has a README.md and a galaxy_info.description.
+
+    Galaxy's importer fails a collection containing a role with no README, and lists a role whose
+    meta/main.yml has no galaxy_info.description without one. Neither stops `ansible-galaxy
+    collection build` or the upload: both surface only in the import result, after the release.
+    """
+    roles_dir = root / "roles"
+    if _kind(root) != "collection" or not roles_dir.is_dir():
+        return []
+    out: list[Problem] = []
+    for role in sorted(p for p in roles_dir.iterdir() if p.is_dir()):
+        rel = f"roles/{role.name}"
+        if not (role / "README.md").is_file():
+            out.append(
+                Problem(f"{rel}/README.md", "CONFORM-13", "missing (Galaxy rejects the import)")
+            )
+        out += _role_description(role / "meta" / "main.yml", f"{rel}/meta/main.yml")
+    return out
+
+
 def conform(root: Path) -> list[Problem]:
     tracked = tracked_files(root)
     return [
@@ -472,6 +512,7 @@ def conform(root: Path) -> list[Problem]:
         *check_manifest(root, tracked),
         *check_spdx(root, tracked),
         *check_actionlint(root),
+        *check_roles(root),
     ]
 
 
