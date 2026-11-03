@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [project]
 name = "ansible-devkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generic tooling for Ansible role repositories: an argspec generator, static checks against silent guards, and a disclosure gate for publishing from a private repository"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -21,6 +21,10 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 
+[project.optional-dependencies]
+# `copier copy` of the repository template (copier.yml, template/). Not needed to run devkit itself.
+template = ["copier>=9.14"]
+
 [project.scripts]
 devkit = "ansible_devkit.cli:main"
 argspec = "ansible_devkit.argspec.cli:main"
@@ -28,6 +32,7 @@ argspec = "ansible_devkit.argspec.cli:main"
 [dependency-groups]
 dev = [
     "black>=25",
+    "copier>=9.14",
     "pytest>=8",
 ]
 
@@ -39,7 +44,7 @@ build-backend = "hatchling.build"
 packages = ["src/ansible_devkit"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "devkit.toml.example"]
+include = ["src", "tests", "docs", "template", "copier.yml", "README.md", "CHANGELOG.md", "LICENSE", "devkit.toml.example"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

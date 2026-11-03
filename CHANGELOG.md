@@ -4,9 +4,27 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
-## [Unreleased]
+## [0.2.0] — 2026-11-03
 
 ### Added
+
+- **`devkit conform [--path DIR]`**: checks a repository against the
+  public-repository standard and prints one line per problem (rules
+  `CONFORM-01`..`CONFORM-12`, listed in `docs/RULES.md`): the `ci`, `disclose`
+  and `release` callers with the right job ids, `uses:` target, release-tag ref,
+  `kind`, secrets and triggers; a GPL-3.0 `LICENSE`; a `CHANGELOG.md` section
+  for the declared version; `export.manifest` equal to `git ls-files`; SPDX
+  headers on tracked `.py` files; `.github/actionlint.yaml`. Exits 2 when a rule
+  could not be evaluated, such as outside a git repository.
+- **A copier template** for a new Ansible collection repository (`copier.yml`,
+  `template/`), generating `galaxy.yml`, `meta/runtime.yml`, `LICENSE`,
+  `README.md`, `CHANGELOG.md`, `.gitignore`, `devkit.toml`, `export.manifest`,
+  `.github/actionlint.yaml` and the three thin callers pinned to a devkit tag.
+  A generated repository passes `devkit conform` and `devkit check all`.
+  `copier` is an optional extra (`ansible-devkit[template]`) and a dev
+  dependency, not a runtime dependency.
+- `tests/test_conform.py` (a failing fixture and a passing near-miss per rule)
+  and `tests/test_template.py`, run by `reusable-ci.yml`'s python job.
 
 - **`reusable-ci.yml`**: an `actionlint` job for every kind, from a pinned release
   tarball whose sha256 is verified; it reads the caller's
@@ -65,5 +83,5 @@ First release.
     `release` environment checks the artifact digests, publishes a collection
     to Galaxy, and creates the tag and GitHub release with a release-App token.
 
-[Unreleased]: https://github.com/Richard-Lynch/ansible-devkit/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Richard-Lynch/ansible-devkit/releases/tag/v0.1.0

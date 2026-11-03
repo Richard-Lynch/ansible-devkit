@@ -177,3 +177,28 @@ finding.
   addresses, real hostnames, a public IP) in an ENGINE path
   (`boundary.engine_roots`, minus the exempt data paths). A role that works on a
   second machine with only inventory changes has none.
+
+## The repository standard (`devkit conform`)
+
+`devkit conform [--path DIR]` checks a repository against the standard every
+repository built on ansible-devkit meets, and that the copier template
+(`copier.yml`, `template/`) generates. It prints one line per problem,
+`<path>: <RULE> <message>`, and exits 0 when the repository conforms, 1 when it
+does not, and 2 when a rule could not be evaluated (no git repository, an
+unreadable file). Each rule has a failing fixture and a passing near-miss in
+`tests/test_conform.py`.
+
+| Rule       | The repository must have                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| CONFORM-01 | `.github/workflows/ci.yml`, `disclose.yml` and `release.yml`, each a YAML mapping                                                          |
+| CONFORM-02 | exactly one job in each, with the id `ci` / `disclose` / `release` (the id names the required check, e.g. `ci / gate`)                     |
+| CONFORM-03 | that job calling `Richard-Lynch/ansible-devkit/.github/workflows/reusable-<id>.yml` (`./.github/workflows/...` only where that file exists) |
+| CONFORM-04 | the `uses:` ref a release tag, `vMAJOR.MINOR.PATCH` — a branch moves under the caller                                                      |
+| CONFORM-05 | `kind:` on ci and release matching the repository (`galaxy.yml`: collection, `pyproject.toml`: python); ci's `ansible_core`, if given, a JSON list of `"X.Y"` |
+| CONFORM-06 | `secrets: inherit` on release; `DISCLOSE_PATTERNS` and `DISCLOSE_ALLOW` passed from `secrets.` on disclose                                 |
+| CONFORM-07 | ci on push to main and `pull_request`; release on push to main; disclose on `pull_request` types opened, synchronize, reopened, edited     |
+| CONFORM-08 | `LICENSE` the GPL-3.0 text (compared with whitespace normalised)                                                                           |
+| CONFORM-09 | a non-empty `## [<version>]` section in `CHANGELOG.md` for the version `galaxy.yml` (else `pyproject.toml`) declares                       |
+| CONFORM-10 | `export.manifest` listing exactly the paths `git ls-files` lists                                                                           |
+| CONFORM-11 | `SPDX-License-Identifier: GPL-3.0-or-later` in the first five lines of every tracked `.py` file                                            |
+| CONFORM-12 | `.github/actionlint.yaml` (the reusable CI's actionlint job reads it)                                                                      |

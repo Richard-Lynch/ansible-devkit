@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ansible_devkit import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -29,7 +31,7 @@ def devkit(*args: str, cwd: Path = ROOT, env: dict | None = None) -> subprocess.
 
 def test_version() -> None:
     p = devkit("--version")
-    assert p.returncode == 0 and "0.1.0" in p.stdout
+    assert p.returncode == 0 and __version__ in p.stdout
 
 
 def test_check_list_names_every_gate() -> None:

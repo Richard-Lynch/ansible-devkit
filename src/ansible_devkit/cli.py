@@ -4,6 +4,7 @@
   devkit check <name> [ARGS...]   run one check (ARGS go to the script unchanged)
   devkit check all                run every gate check against the current repository
   devkit check --list             the registry, with which checks `all` runs
+  devkit conform [--path DIR]     check a repository against the public-repository standard
   devkit disclose ...             the disclosure gate (see ansible_devkit.disclose)
   devkit argspec ...              the argspec generator (also installed as `argspec`)
   devkit trap-report ...          rank recorded trap hits
@@ -20,10 +21,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import click
 
 from ansible_devkit import __version__
+from ansible_devkit import conform as _conform
 from ansible_devkit.argspec.cli import cli as argspec_cli
 from ansible_devkit.checks import BY_NAME, CHECKS, Check, _devkit_config
 from ansible_devkit.disclose import disclose as _disclose
@@ -109,6 +112,34 @@ def check(name: str | None, args: tuple[str, ...], list_: bool) -> None:
     if c is None:
         raise click.UsageError(f"no check named {name!r}; `devkit check --list` names them")
     sys.exit(_run(c, args))
+
+
+@devkit.command()
+@click.option(
+    "--path",
+    "path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=Path("."),
+    show_default=True,
+    help="the repository to check",
+)
+def conform(path: Path) -> None:
+    """Check a repository against the public-repository standard (one line per problem)."""
+    root = path.resolve()
+    problems = _conform.conform(root)
+    for p in problems:
+        click.echo(str(p))
+    rc = _conform.exit_code(problems)
+    if rc == 0:
+        click.echo(f"devkit conform: {root} meets the standard", err=True)
+    else:
+        unchecked = sum(p.unchecked for p in problems)
+        click.echo(
+            f"devkit conform: {len(problems)} problem(s) in {root}"
+            + (f", {unchecked} rule check(s) could not run" if unchecked else ""),
+            err=True,
+        )
+    sys.exit(rc)
 
 
 @devkit.command(

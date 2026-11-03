@@ -8,7 +8,7 @@
 #   on: {pull_request: {}}
 #   jobs:
 #     disclose:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.1.0
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.2.0
 #       secrets:
 #         DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
 #         DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}

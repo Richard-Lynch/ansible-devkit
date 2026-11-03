@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# copier.yml — the template for a new Ansible collection repository that meets the standard
+# `devkit conform` checks (see README.md, "A new collection repository"). The files are under
+# template/. Generate one with:
+#
+#   copier copy --vcs-ref v<devkit version> gh:Richard-Lynch/ansible-devkit <new-repo>
+#
+# then `git init && git add -A`, and `devkit conform` passes before anything else is added.
+# Every question that names an owner, an author or a URL has no default naming a real one.
+_subdirectory: template
+_min_copier_version: "9.14"
+
+namespace:
+  type: str
+  help: Galaxy namespace (lowercase letters, digits and underscores)
+  validator: >-
+    {% if not (namespace | length >= 2 and namespace[0] in 'abcdefghijklmnopqrstuvwxyz'
+    and namespace.strip('abcdefghijklmnopqrstuvwxyz0123456789_') == '') %}lowercase letters,
+    digits and underscores, starting with a letter, at least 2 characters{% endif %}
+
+name:
+  type: str
+  help: Collection name (lowercase letters, digits and underscores)
+  validator: >-
+    {% if not (name | length >= 2 and name[0] in 'abcdefghijklmnopqrstuvwxyz'
+    and name.strip('abcdefghijklmnopqrstuvwxyz0123456789_') == '') %}lowercase letters,
+    digits and underscores, starting with a letter, at least 2 characters{% endif %}
+
+version:
+  type: str
+  help: First version (MAJOR.MINOR.PATCH); the CHANGELOG opens with a section for it
+  default: "0.1.0"
+  validator: >-
+    {% set p = version.split('.') %}{% if p | length != 3 or not (p[0].isdigit()
+    and p[1].isdigit() and p[2].isdigit()) %}MAJOR.MINOR.PATCH, digits only{% endif %}
+
+release_date:
+  type: str
+  help: Date of the first CHANGELOG section (YYYY-MM-DD)
+  default: "{{ '%Y-%m-%d' | strftime }}"
+
+description:
+  type: str
+  help: One-sentence description (galaxy.yml and README.md)
+
+author:
+  type: str
+  help: Author and copyright holder, as it appears in galaxy.yml and the copyright lines
+
+copyright_year:
+  type: str
+  default: "{{ release_date[:4] }}"
+
+github_owner:
+  type: str
+  help: GitHub user or organisation that owns the repository
+
+repo_name:
+  type: str
+  default: "ansible-collection-{{ name }}"
+
+repository_url:
+  type: str
+  default: "https://github.com/{{ github_owner }}/{{ repo_name }}"
+
+requires_ansible:
+  type: str
+  help: meta/runtime.yml requires_ansible (the oldest ansible-core CI tests against)
+  default: ">=2.19.0"
+
+ansible_core:
+  type: yaml
+  help: ansible-core minor versions CI tests against (a list of quoted strings)
+  default: '["2.19", "2.20", "2.21"]'
+  validator: >-
+    {% if ansible_core is string or ansible_core is not sequence or not ansible_core
+    %}a non-empty list such as ["2.20", "2.21"]{% else %}{% for v in ansible_core
+    %}{% if v is not string %}quote each version ("2.21"): an unquoted 2.20 is the number 2.2{%
+    endif %}{% endfor %}{% endif %}
+
+devkit_ref:
+  type: str
+  help: The ansible-devkit release tag the three workflows call (vMAJOR.MINOR.PATCH)
+  default: "v0.2.0"
+  validator: >-
+    {% set p = devkit_ref[1:].split('.') %}{% if not devkit_ref.startswith('v') or p | length != 3
+    or not (p[0].isdigit() and p[1].isdigit() and p[2].isdigit()) %}a release tag such as
+    v0.2.0, never a branch{% endif %}

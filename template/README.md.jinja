@@ -1,0 +1,46 @@
+<!--
+Copyright: (c) {{ copyright_year }}, {{ author }}
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# {{ namespace }}.{{ name }}
+
+{{ description }}
+
+## Install
+
+```sh
+ansible-galaxy collection install {{ namespace }}.{{ name }}
+```
+
+or pin it in `requirements.yml`:
+
+```yaml
+collections:
+  - name: {{ namespace }}.{{ name }}
+    version: "{{ version }}"
+```
+
+Requires ansible-core {{ requires_ansible }}.
+
+## Development
+
+```sh
+# from a checkout at ansible_collections/{{ namespace }}/{{ name }}
+ansible-test sanity --docker
+ansible-test units --docker
+ansible-galaxy collection build
+devkit conform                  # the repository standard (ansible-devkit)
+devkit check all                # the static checks, configured by devkit.toml
+```
+
+CI, the disclosure gate and releases are the shared workflows of
+[ansible-devkit](https://github.com/Richard-Lynch/ansible-devkit), called from
+`.github/workflows/` at tag `{{ devkit_ref }}`. A release is a merged pull
+request that bumps `version` in `galaxy.yml` and adds the matching
+`CHANGELOG.md` section. `export.manifest` lists every tracked path; update it in
+the same commit as any file added or removed.
+
+## Licence
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).
