@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The copier template (copier.yml, template/) generates a repository that meets the standard.
+
+The template is copied to a temporary NON-git directory before `copier copy`: copier reads a git
+template at its latest tag, so copying from this checkout directly would test the last release's
+template rather than the one in the working tree.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import copier
+import pytest
+import yaml
+
+from ansible_devkit import __version__, conform
+
+ROOT = Path(__file__).resolve().parents[1]
+
+ANSWERS = {
+    "namespace": "example_ns",
+    "name": "demo",
+    "description": "A demonstration collection.",
+    "author": "Example Author",
+    "github_owner": "example-owner",
+    "release_date": "2026-01-02",
+}
+
+
+def generate(tmp_path: Path, **overrides: object) -> Path:
+    src = tmp_path / "src"
+    src.mkdir()
+    shutil.copy(ROOT / "copier.yml", src / "copier.yml")
+    shutil.copytree(ROOT / "template", src / "template")
+    dst = tmp_path / "out"
+    copier.run_copy(str(src), str(dst), data={**ANSWERS, **overrides}, defaults=True, quiet=True)
+    subprocess.run(["git", "init", "-q", str(dst)], check=True)
+    subprocess.run(["git", "-C", str(dst), "add", "-A"], check=True)
+    return dst
+
+
+def test_generated_repository_conforms(tmp_path: Path) -> None:
+    out = generate(tmp_path)
+    assert conform.conform(out) == []
+
+
+def test_generated_repository_passes_devkit_check_all(tmp_path: Path) -> None:
+    out = generate(tmp_path)
+    p = subprocess.run(
+        [sys.executable, "-m", "ansible_devkit.cli", "check", "all"],
+        cwd=out,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
+
+
+def test_answers_reach_the_files(tmp_path: Path) -> None:
+    out = generate(tmp_path, version="2.3.4", devkit_ref="v9.8.7", ansible_core=["2.21"])
+    galaxy = yaml.safe_load((out / "galaxy.yml").read_text())
+    assert (galaxy["namespace"], galaxy["name"], galaxy["version"]) == (
+        "example_ns",
+        "demo",
+        "2.3.4",
+    )
+    assert galaxy["license"] == ["GPL-3.0-or-later"]
+    assert galaxy["repository"] == "https://github.com/example-owner/ansible-collection-demo"
+    assert "## [2.3.4] — 2026-01-02" in (out / "CHANGELOG.md").read_text()
+    ci = yaml.safe_load((out / ".github/workflows/ci.yml").read_text())
+    assert ci["jobs"]["ci"]["uses"].endswith("reusable-ci.yml@v9.8.7")
+    assert ci["jobs"]["ci"]["with"] == {
+        "kind": "collection",
+        "ansible_core": '["2.21"]',
+    }
+    runtime = yaml.safe_load((out / "meta/runtime.yml").read_text())
+    assert runtime == {"requires_ansible": ">=2.19.0"}
+    assert conform.conform(out) == []
+
+
+def test_template_license_is_this_repositorys() -> None:
+    assert (ROOT / "template/LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()
+
+
+def test_default_devkit_ref_is_this_release() -> None:
+    questions = yaml.safe_load((ROOT / "copier.yml").read_text())
+    assert questions["devkit_ref"]["default"] == f"v{__version__}"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"devkit_ref": "main"},
+        {"namespace": "Bad-Name"},
+        {"version": "1.0"},
+        {"ansible_core": [2.20]},
+    ],
+)
+def test_invalid_answers_are_refused(tmp_path: Path, answer: dict) -> None:
+    with pytest.raises(ValueError, match="Validation error for question"):
+        generate(tmp_path, **answer)

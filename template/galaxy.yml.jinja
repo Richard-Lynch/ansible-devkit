@@ -1,0 +1,32 @@
+# Copyright: (c) {{ copyright_year }}, {{ author }}
+# GNU General Public License v3.0+ (see https://www.gnu.org/licenses/gpl-3.0.txt)
+# SPDX-License-Identifier: GPL-3.0-or-later
+---
+namespace: {{ namespace }}
+name: {{ name }}
+version: {{ version }}
+readme: README.md
+authors:
+  - {{ author }}
+description: >-
+  {{ description }}
+license:
+  - GPL-3.0-or-later
+tags:
+  - tools
+dependencies: {}
+repository: {{ repository_url }}
+documentation: {{ repository_url }}/blob/main/README.md
+homepage: {{ repository_url }}
+issues: {{ repository_url }}/issues
+build_ignore:
+  - .github
+  - .gitignore
+  - collections.galaxy
+  - devkit.toml
+  - dist
+  - export.manifest
+  - tests/output
+  - roles/*/meta/argument_specs.py
+  - roles/*/molecule
+  - "*.tar.gz"

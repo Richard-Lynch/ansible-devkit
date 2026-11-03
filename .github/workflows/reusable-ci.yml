@@ -9,7 +9,7 @@
 #   on: {push: {branches: [main]}, pull_request: {}}
 #   jobs:
 #     ci:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.1.0
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.2.0
 #       with: {kind: python}            # or kind: collection
 #
 # every kind       actionlint over the caller's workflows (reads the caller's .github/actionlint.yaml).
@@ -74,7 +74,7 @@ jobs:
       - name: Test suites
         # Each tests/test_*.py entry point is named here on purpose: the ci-covers-hook-tests check
         # (part of `devkit check all` below) requires every suite in tests/ to be run by a workflow.
-        run: uv run pytest -q tests/test_suites.py tests/test_cli.py
+        run: uv run pytest -q tests/test_suites.py tests/test_cli.py tests/test_conform.py tests/test_template.py
       - name: devkit check all (self-check)
         run: uv run devkit check all
       - name: Formatting (black from the locked dev group)

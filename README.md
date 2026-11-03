@@ -21,6 +21,11 @@ Generic tooling for Ansible role repositories:
   exact matches of known secret values, and the same again over a built tarball.
   It never prints a matched value, and it fails closed.
 
+- **`devkit conform`** and a **copier template** — the public-repository
+  standard as a check and as a generator: the three thin workflow callers pinned
+  to a devkit tag, GPL-3.0, a CHANGELOG section for the declared version, an
+  `export.manifest` equal to `git ls-files`, SPDX headers.
+
 Everything that names an estate — hosts, addresses, tree roots, vault names —
 lives in the consuming repository's `devkit.toml`, never in this package.
 
@@ -30,10 +35,10 @@ Releases are git tags; there is no PyPI package. Pin a tag:
 
 ```sh
 # as a tool (puts `devkit` and `argspec` on PATH)
-uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.1.0
+uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.0
 
 # or as a dev dependency of your Ansible repository
-uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.1.0"
+uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.0"
 ```
 
 Python 3.12 or newer. `devkit disclose` also needs `gitleaks` and `trufflehog`
@@ -78,6 +83,31 @@ config_dir_aliases = {}
 A key a check requires has no default on purpose: a checker that guesses where
 your repo keeps things, and finds nothing there, reports a clean repo it never
 looked at.
+
+### The repository standard
+
+```sh
+devkit conform                 # or: devkit conform --path /path/to/repo
+```
+
+prints one line per problem (`<path>: CONFORM-NN <message>`) and exits 0, 1, or
+2 when a rule could not run (for example, not a git repository).
+`docs/RULES.md` lists the rules.
+
+A new collection repository that already conforms comes from the copier
+template (`copier.yml` at this repository's root, files under `template/`):
+
+```sh
+uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.2.0"
+copier copy --vcs-ref v0.2.0 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
+cd ansible-collection-demo && git init -q && git add -A && devkit conform
+```
+
+It asks for the namespace, name, first version, author, GitHub owner, the
+ansible-core versions CI tests and the devkit tag the workflows call, and writes
+`galaxy.yml`, `meta/runtime.yml`, `LICENSE`, `README.md`, `CHANGELOG.md`,
+`.gitignore`, `devkit.toml`, `export.manifest`, `.github/actionlint.yaml` and the
+`ci`, `disclose` and `release` callers.
 
 ### The disclosure gate
 
@@ -147,9 +177,11 @@ src/ansible_devkit/
   checks/       one script per check, `_devkit_config.py` (the devkit.toml loader), the registry
   disclose/     disclose.py and its gitleaks base config
   scripts/      affected-scenarios.sh — the molecule scenario selector MOLVERIFY-05 consults
+  conform.py    `devkit conform`, the repository-standard rules
   cli.py        the `devkit` console script
 tests/          pytest entry points; tests/suites/ holds the stand-alone suites and their fixture repo
 docs/RULES.md   every rule id, tagged, with what it catches
+copier.yml      the questions of the collection-repository template; template/ holds its files
 devkit.toml     this repository's own configuration (it checks itself)
 export.manifest every path in the repository, for the disclosure gate's manifest step
 ```
