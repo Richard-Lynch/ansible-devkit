@@ -4,6 +4,20 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.4.1] — 2026-11-05
+
+### Changed (security review of the Renovate policy)
+
+- **Repositories pin the preset**: `github>Richard-Lynch/ansible-devkit//renovate/default#vX.Y.Z`
+  (the template writes the release it was generated from), so the shared policy moves only
+  through a reviewed PR in each repository.
+- **The preset turns no automerge on.** Every automerge decision lives in the repository's own
+  `renovate.json`, after the preset, so a later preset cannot widen it: everything off, then only
+  `actions/*` PATCH releases at least 5 days old (`minimumReleaseAge`). Third-party actions and
+  digest-only updates are always reviewed; Galaxy content (it runs on the privileged controller
+  and is not hash-locked) is always reviewed; a repository with a Dockerfile scopes its
+  `dockerfile` updates by `matchFileNames` with automerge off.
+
 ## [0.4.0] — 2026-11-04
 
 ### Added

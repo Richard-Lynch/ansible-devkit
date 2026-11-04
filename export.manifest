@@ -64,7 +64,7 @@ template/devkit.toml.jinja
 template/export.manifest
 template/galaxy.yml.jinja
 template/meta/runtime.yml.jinja
-template/renovate.json
+template/renovate.json.jinja
 tests/suites/_paths.py
 tests/suites/fixture_repo/devkit.toml
 tests/suites/test_affected_scenarios.py

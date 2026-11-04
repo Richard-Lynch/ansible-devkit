@@ -1,14 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "ansible-devkit's shared Renovate policy for every repository built on it: one PR per ecosystem, patch and digest bumps automerged once the required checks (ci / gate, disclose / gate) are green, everything else reviewed. Extend it as github>Richard-Lynch/ansible-devkit//renovate/default and add only repo-specific rules.",
-  "extends": ["config:recommended", ":dependencyDashboard", ":disableRateLimiting"],
+  "description": "ansible-devkit's shared Renovate policy: grouping, schedule, pinning and the Galaxy manager. Repositories extend it PINNED to a release tag (github>Richard-Lynch/ansible-devkit//renovate/default#vX.Y.Z), so it moves only through a reviewed PR in each repository, and every security-relevant automerge decision lives in the repository's own renovate.json, after this preset, where a later preset cannot widen it.",
+  "extends": ["config:recommended", ":dependencyDashboard"],
   "timezone": "Europe/London",
   "schedule": ["* 0-6 * * 1"],
   "prConcurrentLimit": 5,
   "labels": ["dependencies"],
   "configMigration": true,
-  "platformAutomerge": true,
-  "automergeType": "pr",
+  "automerge": false,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["* 0-6 1 * *"],
@@ -17,7 +16,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "galaxy.yml `dependencies:` (a mapping of collection: range). The ansible-galaxy manager reads requirements.yml lists; this reads the mapping a collection publishes.",
+      "description": "galaxy.yml `dependencies:` (a mapping of collection: range).",
       "managerFilePatterns": ["/(^|/)galaxy\\.ya?ml$/"],
       "matchStrings": ["\\n\\s+[\"']?(?<depName>[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*)[\"']?:\\s*[\"'](?<currentValue>[^\"'\\n]+)[\"']"],
       "datasourceTemplate": "galaxy-collection",
@@ -26,14 +25,20 @@
   ],
   "packageRules": [
     {
-      "description": "GitHub Actions: one grouped PR, every third-party action pinned to a commit digest with its tag in a comment (DEP-04).",
+      "description": "GitHub Actions: one grouped PR; every action pinned to a commit digest with its tag in a comment (DEP-04).",
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
       "groupSlug": "github-actions",
       "pinDigests": true
     },
     {
-      "description": "devkit's own reusable workflows stay on release TAGS (devkit conform CONFORM-04; the tag rulesets make them immutable), grouped on their own so a devkit release is one PR.",
+      "description": "GitHub's own actions wait several days after a release before Renovate proposes them.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/**"],
+      "minimumReleaseAge": "5 days"
+    },
+    {
+      "description": "devkit's own reusable workflows stay on release TAGS (CONFORM-04), grouped so a devkit release is one PR.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["Richard-Lynch/ansible-devkit"],
       "groupName": "ansible-devkit",
@@ -52,11 +57,6 @@
       "matchManagers": ["pep621"],
       "groupName": "Python dependencies",
       "groupSlug": "python"
-    },
-    {
-      "description": "Patch and digest updates merge themselves once the required checks pass; minor and major wait for a human.",
-      "matchUpdateTypes": ["patch", "digest", "pin", "pinDigest"],
-      "automerge": true
     },
     {
       "description": "A major bump is opened only from the dependency dashboard.",
