@@ -1,0 +1,11 @@
+# .disclose-allow — exemptions for THIS repository's own fixtures, read by the shared disclose
+# workflow from the pull request's BASE (so a pull request cannot widen the exemptions that judge
+# it). One per line: <rule-glob> <location-glob> <reason of three words or more>. A location glob
+# covers a tree path and the same path inside a built tarball. See `devkit disclose --help`.
+#
+# The gate's own suite plants a value for every generic rule to prove it fires. The private
+# addresses are assembled at run time; the MAC, the op:// reference and the address outside the
+# RFC 2606 names are written out, synthetic, and the file is the fixture.
+email   tests/suites/test_disclose.py  synthetic owner address in the gate's own fixtures
+mac     tests/suites/test_disclose.py  synthetic device MAC in the gate's own fixtures
+op-ref  tests/suites/test_disclose.py  synthetic op:// reference in the gate's own fixtures

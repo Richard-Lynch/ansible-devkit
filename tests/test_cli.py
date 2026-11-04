@@ -113,4 +113,4 @@ def test_argspec_is_a_subcommand() -> None:
 
 def test_disclose_is_a_subcommand() -> None:
     p = devkit("disclose", "--help")
-    assert p.returncode == 0 and "--patterns" in p.stdout
+    assert p.returncode == 0 and "--local" in p.stdout and "--since" in p.stdout
