@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # disclose — thin caller of the shared disclosure gate (reusable-disclose.yml). The job id
-# `disclose` makes the required status check `disclose / gate`. Fails closed when the
-# DISCLOSE_PATTERNS or DISCLOSE_ALLOW secret is absent (a fork PR never receives it).
+# `disclose` makes the required status check `disclose / gate`. It passes no secrets: the gate's
+# generic rules need no private input, and the repository's own fixture exemptions come from
+# `.disclose-allow` at the pull request's base.
 name: disclose
 
 on:
@@ -16,6 +17,3 @@ permissions:
 jobs:
   disclose:
     uses: ./.github/workflows/reusable-disclose.yml
-    secrets:
-      DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
-      DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}

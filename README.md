@@ -37,10 +37,10 @@ Releases are git tags; there is no PyPI package. Pin a tag:
 
 ```sh
 # as a tool (puts `devkit` and `argspec` on PATH)
-uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.3
+uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.3.1
 
 # or as a dev dependency of your Ansible repository
-uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.2.3"
+uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.3.1"
 ```
 
 Python 3.12 or newer. `devkit disclose` also needs `gitleaks` and `trufflehog`
@@ -100,8 +100,8 @@ A new collection repository that already conforms comes from the copier
 template (`copier.yml` at this repository's root, files under `template/`):
 
 ```sh
-uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.2.3"
-copier copy --vcs-ref v0.2.3 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
+uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.3.1"
+copier copy --vcs-ref v0.3.1 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
 cd ansible-collection-demo && git init -q && git add -A && devkit conform
 ```
 
@@ -141,8 +141,9 @@ covers a tree path and the same path inside the tarball. Every repository built
 on this package carries a `.disclose-allow` for its own fixtures (a molecule
 default address, a synthetic key); the shared `disclose` workflow reads it from
 the pull request's BASE, so a pull request cannot widen the exemptions that
-judge it. This repository's own `disclose` workflow runs the gate on every pull
-request with no private input at all.
+judge it (a new fixture exemption lands in its own pull request first). This
+repository's own `disclose` workflow runs the gate on every pull request with no
+private input at all.
 
 ## The argspec generator
 

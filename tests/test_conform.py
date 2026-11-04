@@ -42,9 +42,11 @@ on:
 jobs:
   disclose:
     uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.2.0
-    secrets:
-      DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
-      DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}
+"""
+
+DISCLOSE_ALLOW = """\
+# fixture exemptions
+rfc1918-10  roles/demo/molecule/default/converge.yml  molecule default address of the fixture
 """
 
 RELEASE = """\
@@ -108,6 +110,7 @@ def repo(tmp_path: Path) -> Path:
     write(tmp_path, ".github/workflows/disclose.yml", DISCLOSE)
     write(tmp_path, ".github/workflows/release.yml", RELEASE)
     write(tmp_path, ".github/actionlint.yaml", "# no ignores\n")
+    write(tmp_path, ".disclose-allow", DISCLOSE_ALLOW)
     write(tmp_path, "galaxy.yml", "---\nnamespace: ex\nname: demo\nversion: 1.2.0\n")
     write(tmp_path, "CHANGELOG.md", CHANGELOG)
     write(
@@ -322,21 +325,54 @@ def test_06_release_without_inherit_fails(repo: Path) -> None:
     assert rules(repo) == ["CONFORM-06"]
 
 
-def test_06_disclose_missing_allow_fails(repo: Path) -> None:
-    text = DISCLOSE.replace("      DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}\n", "")
+def test_06_disclose_passing_secrets_fails(repo: Path) -> None:
+    text = DISCLOSE + "    secrets:\n      DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}\n"
     write(repo, ".github/workflows/disclose.yml", text)
     assert rules(repo) == ["CONFORM-06"]
 
 
-def test_06_disclose_wrong_source_fails(repo: Path) -> None:
-    text = DISCLOSE.replace("secrets.DISCLOSE_PATTERNS }}", "vars.DISCLOSE_PATTERNS }}")
-    write(repo, ".github/workflows/disclose.yml", text)
+def test_06_disclose_inherit_fails(repo: Path) -> None:
+    write(repo, ".github/workflows/disclose.yml", DISCLOSE + "    secrets: inherit\n")
     assert rules(repo) == ["CONFORM-06"]
 
 
-def test_06_disclose_unspaced_expression_passes(repo: Path) -> None:
-    text = DISCLOSE.replace("${{ secrets.DISCLOSE_PATTERNS }}", "${{secrets.DISCLOSE_PATTERNS}}")
-    write(repo, ".github/workflows/disclose.yml", text)
+def test_06_disclose_with_no_secrets_passes(repo: Path) -> None:
+    write(repo, ".github/workflows/disclose.yml", DISCLOSE)
+    assert rules(repo) == []
+
+
+# CONFORM-14 — .disclose-allow
+
+
+def test_14_missing_disclose_allow_fails(repo: Path) -> None:
+    (repo / ".disclose-allow").unlink()
+    stage(repo)
+    assert rules(repo) == ["CONFORM-14"]
+
+
+def test_14_line_without_reason_fails(repo: Path) -> None:
+    write(repo, ".disclose-allow", "rfc1918-10 roles/demo/molecule/default/converge.yml\n")
+    assert rules(repo) == ["CONFORM-14"]
+
+
+def test_14_two_word_reason_fails(repo: Path) -> None:
+    write(repo, ".disclose-allow", "rfc1918-10 roles/demo/x.yml too short\n")
+    assert rules(repo) == ["CONFORM-14"]
+
+
+@pytest.mark.parametrize("loc", ["*", "**", "tarball:*"])
+def test_14_everywhere_location_fails(repo: Path, loc: str) -> None:
+    write(repo, ".disclose-allow", f"rfc1918-10 {loc} molecule default address of the fixture\n")
+    assert rules(repo) == ["CONFORM-14"]
+
+
+def test_14_comment_only_file_passes(repo: Path) -> None:
+    write(repo, ".disclose-allow", "# nothing exempted yet\n\n")
+    assert rules(repo) == []
+
+
+def test_14_near_miss_glob_location_passes(repo: Path) -> None:
+    write(repo, ".disclose-allow", "mac roles/*/molecule/* synthetic MACs in the fixtures\n")
     assert rules(repo) == []
 
 
