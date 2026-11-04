@@ -293,6 +293,38 @@ case(
     0,
 )
 case(
+    "DEP-05 near-miss a dotted sysctl name is not a collection",
+    task("- name: s\n  ansible.posix.sysctl:\n    name: net.ipv4.ip_forward\n    value: '1'\n")
+    | {"galaxy.yml": GALAXY + '  ansible.posix: ">=2.0.0"\n'},
+    0,
+)
+case(
+    "DEP-05 near-miss a dotted key inside a Jinja scalar",
+    task(
+        "- name: f\n  ansible.builtin.set_fact:\n    x: >-\n"
+        "      {{ {} | combine({\n           item.item.name: 1 }) }}\n"
+    ),
+    0,
+)
+case(
+    "DEP-05 FAIL a role included from an undeclared collection",
+    task("- name: r\n  ansible.builtin.include_role:\n    name: other.coll.role\n"),
+    1,
+    "other.coll",
+)
+case(
+    "DEP-05 FAIL a task inside a block",
+    task("- block:\n    - name: x\n      community.docker.docker_image:\n        name: x\n"),
+    1,
+    "community.docker",
+)
+case(
+    "DEP-05 FAIL a task file that does not parse",
+    task("- name: [x\n"),
+    1,
+    "does not parse",
+)
+case(
     "DEP-05 FAIL a plugin importing an undeclared collection",
     {
         "galaxy.yml": GALAXY,

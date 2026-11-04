@@ -81,11 +81,6 @@ SKIP_PARTS = ("/molecule/",)
 SELF: tuple[str, ...] = ("src/ansible_devkit/checks/check_dependencies.py",)
 SHA40 = re.compile(r"[0-9a-f]{40}")
 RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+")
-FQCN_KEY = re.compile(r"^\s*-?\s*([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)\.[a-z_][a-z0-9_]*:", re.M)
-ROLE_REF = re.compile(
-    r"^\s*-?\s*(?:role|name):\s*['\"]?([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)\.[a-z_][a-z0-9_]*['\"]?\s*$",
-    re.M,
-)
 PLUGIN_IMPORT = re.compile(
     r"^\s*(?:from|import)\s+ansible_collections\.([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b", re.M
 )
@@ -749,6 +744,41 @@ def declared(root: Path) -> tuple[str | None, dict[str, str], list[Finding]]:
     return None, {}, []
 
 
+FQCN = re.compile(r"([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)\.[a-z_][a-z0-9_]*")
+ROLE_MODULES = (
+    "include_role", "import_role", "ansible.builtin.include_role", "ansible.builtin.import_role",
+    "ansible.legacy.include_role", "ansible.legacy.import_role",
+)  # fmt: skip
+TASK_BLOCKS = ("block", "rescue", "always")
+
+
+def collections_used(doc) -> list[str]:
+    """Collections a PARSED task file uses: a task's FQCN module key, and the role named by an
+    include_role/import_role. Parsed, not grepped: `name: net.ipv4.ip_forward` (a sysctl key) and
+    `item.item.name:` inside a Jinja scalar are not module references."""
+    out: list[str] = []
+
+    def tasks(xs) -> None:
+        for t in xs if isinstance(xs, list) else []:
+            if not isinstance(t, dict):
+                continue
+            for k, v in t.items():
+                if k in TASK_BLOCKS:
+                    tasks(v)
+                    continue
+                m = FQCN.fullmatch(str(k))
+                if m:
+                    out.append(m.group(1))
+                if k in ROLE_MODULES:
+                    name = v.get("name") if isinstance(v, dict) else None
+                    m2 = FQCN.fullmatch(str(name)) if isinstance(name, str) else None
+                    if m2:
+                        out.append(m2.group(1))
+
+    tasks(doc)
+    return out
+
+
 def dep05(root: Path, files: list[str]) -> list[Finding]:
     me, decl, out = declared(root)
     if out:
@@ -774,8 +804,11 @@ def dep05(root: Path, files: list[str]) -> list[Finding]:
         m = re.match(r"roles/([^/]+)/(tasks|handlers)/.*\.ya?ml$", f)
         if m:
             where = f"roles/{m.group(1)}"
-            text = read(root, f)
-            used = FQCN_KEY.findall(text) + ROLE_REF.findall(text)
+            try:
+                used = collections_used(yaml.safe_load(read(root, f)))
+            except yaml.YAMLError as e:
+                out.append(Finding("DEP-05", f, "unparseable", 0, f"task file does not parse: {e}"))
+                continue
         elif f.startswith("plugins/") and f.endswith(".py"):
             where = f
             used = [f"{a}.{b}" for a, b in PLUGIN_IMPORT.findall(read(root, f))]
