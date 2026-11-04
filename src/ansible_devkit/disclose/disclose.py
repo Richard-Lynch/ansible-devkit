@@ -1,42 +1,58 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""disclose — prove one exact commit, and all of its history, is fit to push to a PUBLIC repo.
+"""disclose — prove one exact commit, and the history behind it, is fit to push to a PUBLIC repo.
 
-Generic half of the disclosure gate (M2_PLAN §3). It is destined for devkit as `devkit disclose`, so
-it carries NO estate knowledge: everything that names an estate arrives in a PRIVATE pattern file
-passed by path, which never lives in the repo being scanned.
+The ONE scanner of a disclosure gate. It is generic by construction: it ships no value that names
+any estate, so it can run in public CI with nothing but the repository in front of it, and the same
+command runs in the private repository that publishes, with two private inputs added.
 
-STEPS (each is a separate entry in the JSON report; any finding in any step fails the gate)
-  1. manifest   the tree at SHA must equal the export manifest exactly — no unlisted file, no listed
-                file missing — and no path anywhere in the history may be unlisted either. The one
-                exception (`--published <commit>`, an ancestor of SHA that is ALREADY public): a
-                path deleted since then is not unlisted history when every blob it ever held at
-                that path is one the published commit's history already carried at that path.
-                Without it, no release that deletes a file could pass, because the manifest must
-                equal the tree. A new blob at an old path, or a path that exists only in the new
-                commits, still fails; every other step scans the full history regardless.
-  2. secrets    gitleaks over the full history with the base config passed in (NOT the repo's own
-                .gitleaks.toml, and with no docs/ exclusion), then trufflehog. Inline suppression
-                comments (gitleaks:allow, trufflehog:ignore) are not honoured.
-  3. literals   every pattern in the private file over every blob in `git rev-list --all --objects`,
-                every commit and tag message, and every author/committer name and email.
-  4. known      exact match of every known secret value (a credential cache plus a declared list,
-                every string value of at least KNOWN_SECRET_MIN_LEN characters).
-  5. artifact   when a built tarball is given: its members against the manifest, its sha256, and
-                steps 2-4 again over the unpacked files.
+CHECKS (each finding is {step, rule, location, line, object}; any finding fails the gate)
+  generic    always on, no input needed:
+               rfc1918-10 / rfc1918-172 / rfc1918-192 / rfc6598-100   a private or shared IPv4
+               mac        a universally-administered unicast MAC (a locally-administered, multicast
+                          or all-zero one is a fixture or a protocol constant, never one device)
+               email      an address outside the RFC 2606 names (example.*, .test, .invalid,
+                          .example, .localhost); a noreply mailbox, the `git@` user of an SSH
+                          URL, a systemd `unit@instance.service` name and an iSCSI `@iqn.`
+                          instance are not addresses
+               steamid64  a SteamID64 whose account id is 1000 or more (below that is a fixture)
+               op-ref     an `op://` secret reference (it names a vault and an item)
+  local      `--local FILE` (optional, PRIVATE, never in the scanned repository): the publisher's
+             own literals and regexes, plain text, one per line:
+               <category> <value>        a literal: bounded by non-alphanumerics, case-insensitive;
+                                         its rule is `<category>:<value>`
+               regex <name> <pattern>    a regex; its rule is `<name>`
+  known      `--secrets-cache FILE` (+ `--secrets-declared FILE`): every known secret VALUE of at
+             least KNOWN_SECRET_MIN_LEN characters, by exact match. The rule names the item, never
+             the value. `--allow-missing secrets-cache` is the recorded way to run without it.
+  secrets    gitleaks over the scanned history with the base config shipped here (never the
+             repository's own .gitleaks.toml, no docs exclusion), then trufflehog. Inline
+             suppression comments are not honoured.
+  artifact   `--tarball FILE`: every member must be a path in the tree at SHA (plus the two files
+             `ansible-galaxy collection build` adds), and every check above runs over the unpacked
+             files too.
 
-WHAT IT NEVER DOES: print or record a matched value. A finding is {step, rule, location, line,
-object}; a literal's rule is its opaque pattern id, a known secret's rule names the ITEM. A gate that
-copies the leak into a report — which public CI prints — would be its own leak.
+SCOPE  `--since COMMIT` (an ancestor of SHA that is already public — a pull request's base on the
+       default branch, the remote's main): only the blobs, commit messages and identities that are
+       NEW since it are scanned, which is what the push adds. Without it the whole history of SHA
+       is scanned (a first push, or an audit).
 
-FAILS CLOSED. A missing scanner, an unreadable pattern file, a scanner that errors, a SHA no ref
-reaches, an allow-list line with no reason: each is exit 2, never a pass. `--allow-missing <tool>`
-is the one explicit, recorded way to run without a scanner.
+WHAT IT PRINTS. A generic or known finding never carries the matched text: the rule id and the
+location are all a public CI log gets. A LOCAL literal's rule IS the literal, so the report of a
+run that used `--local` is as private as the local file — which is why the local file never reaches
+public CI, and public CI prints nothing private.
+
+FAILS CLOSED. A missing scanner, a scanner that errors, an unreadable local or allow file, a SHA
+that is not a commit, an allow line with no reason or with a location of `*`: exit 2, never a pass.
+
+EXEMPTIONS `--allow FILE` (repeatable): `<rule-glob> <location-glob> <reason of three words or more>`
+per line. A location glob matches a tree path AND the same path inside the tarball, so one line
+covers both. Every rule is reported with how many findings it suppressed.
 
 Exit: 0 = every step ran and found nothing; 1 = findings; 2 = the gate could not be run properly.
 
 Usage:
-  disclose.py --repo PATH --sha SHA --patterns FILE [--manifest FILE] [--allow FILE]
+  disclose.py --repo PATH --sha SHA [--since COMMIT] [--local FILE] [--allow FILE]...
               [--secrets-cache FILE] [--secrets-declared FILE] [--tarball FILE]
               [--gitleaks-config FILE] [--allow-missing TOOL]... [--report FILE]
 """
@@ -61,14 +77,49 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DEFAULT_GITLEAKS_CONFIG = HERE / "gitleaks-base.toml"
 SCANNERS = ("gitleaks", "trufflehog")
-# Members `ansible-galaxy collection build` adds that no source manifest lists.
+# Members `ansible-galaxy collection build` adds that no source tree holds.
 GALAXY_GENERATED = {"MANIFEST.json", "FILES.json"}
 # A shorter "secret" would match everywhere, so values below this length are ignored.
 KNOWN_SECRET_MIN_LEN = 16
+TARBALL_PREFIX = "tarball:"
+
+# RFC 5737 documentation ranges: an example address is not a disclosure.
 EXEMPT_NETS = [
     ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
 ]
-EXEMPT_DOMAIN = re.compile(r"(?i)(?:^|\.)(?:example\.com|[a-z0-9-]+\.test|test)$")
+# RFC 2606 / RFC 6761 reserved names, which documentation and fixtures use.
+EXEMPT_DOMAIN = re.compile(
+    r"(?i)(?:^|\.)(?:example\.(?:com|net|org)|[a-z0-9-]+\.(?:test|example|invalid|localhost)"
+    r"|test|example|invalid|localhost)$"
+)
+# The identity GitHub writes for a web edit or a squash, and the per-user noreply address.
+# Addresses that identify nobody: a noreply mailbox (GitHub's, an attribution trailer's), the
+# per-user GitHub noreply address, and the `git@host:` user of an SSH clone URL.
+EXEMPT_EMAIL = re.compile(r"(?i)^(?:no-?reply@|git@|[^@]+@users\.noreply\.github\.com$)")
+# A systemd template instance (`unit@instance.service`) is not an address.
+SYSTEMD_UNIT_TYPES = (
+    "service", "socket", "target", "mount", "automount", "timer", "path", "slice", "swap", "device",
+    "scope",
+)  # fmt: skip
+
+_B = r"(?<![0-9.])"
+_E = r"(?![0-9]|\.[0-9])"
+GENERIC_REGEXES: list[tuple[str, re.Pattern]] = [
+    ("rfc1918-10", re.compile(_B + r"10(?:\.\d{1,3}){3}" + _E)),
+    ("rfc1918-172", re.compile(_B + r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}" + _E)),
+    ("rfc1918-192", re.compile(_B + r"192\.168(?:\.\d{1,3}){2}" + _E)),
+    ("rfc6598-100", re.compile(_B + r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}" + _E)),
+    ("mac", re.compile(
+        r"(?<![0-9A-Za-z:-])([0-9A-Fa-f]{2}(?:([:-])[0-9A-Fa-f]{2})(?:\2[0-9A-Fa-f]{2}){4})"
+        r"(?![0-9A-Za-z:-])"
+    )),
+    ("email", re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z0-9-])")),
+    ("steamid64", re.compile(r"(?<![0-9])7656119\d{10}(?![0-9])")),
+    # `op://...` and `op://<vault>/...` are placeholders; a reference starts with a vault name.
+    ("op-ref", re.compile(r"op://[A-Za-z0-9][^\s'\"`<>]*")),
+]  # fmt: skip
+STEAM_BASE = 76561197960265728  # Valve's individual-account base: SteamID64 = base + account id
+STEAM_MIN_ACCOUNT = 1000  # below this an account id is a fixture, never a profile
 
 
 class GateError(Exception):
@@ -125,22 +176,33 @@ def resolve_commit(repo: Path, sha: str) -> str:
     full = git(repo, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}").decode().strip()
     if not full:
         raise GateError(f"{sha} is not a commit in {repo}")
-    # The history scanners walk REFS. A SHA no ref reaches would have its own objects skipped by
-    # them while this tool scanned it — two scopes, one of them silently narrower.
-    refs = git(repo, "for-each-ref", "--contains", full, "--format=%(refname)").decode().split()
-    if not refs:
-        raise GateError(f"{full} is not reachable from any ref; point a branch at it first")
     return full
 
 
-def all_objects(repo: Path, sha: str) -> list[tuple[str, str]]:
-    """(blob, path) for every BLOB reachable from any ref or SHA.
+def resolve_since(repo: Path, sha: str, since: str) -> str:
+    """The already-public commit: the full id of a strict ancestor of SHA."""
+    if not re.fullmatch(r"[0-9a-f]{40}", since):
+        raise GateError("--since must be the full 40-hex commit id")
+    if not git(repo, "rev-parse", "--verify", "--quiet", f"{since}^{{commit}}").strip():
+        raise GateError(f"--since {since} is not a commit in {repo}")
+    if since == sha:
+        raise GateError("--since is the scanned commit itself: nothing would be scanned")
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", since, sha], check=False
+    )
+    if proc.returncode != 0:
+        raise GateError(f"--since {since} is not an ancestor of {sha}")
+    return since
+
+
+def new_objects(repo: Path, sha: str, since: str | None) -> list[tuple[str, str]]:
+    """(blob, path) for every BLOB reachable from SHA and, with `since`, not from `since`.
 
     `rev-list --objects` also lists commits (no path) and trees (a directory path); those are
-    dropped by asking `cat-file --batch-check` for each object's type, so a deleted directory is
-    not mistaken for a deleted file.
+    dropped by asking `cat-file --batch-check` for each object's type.
     """
-    out = git(repo, "rev-list", "--objects", "--all", sha).decode(errors="replace")
+    revs = [sha, f"^{since}"] if since else [sha]
+    out = git(repo, "rev-list", "--objects", *revs).decode(errors="replace")
     pairs = [line.partition(" ")[::2] for line in out.splitlines() if line]
     if not pairs:
         return []
@@ -182,47 +244,62 @@ def blob_contents(repo: Path, objs: list[str]) -> dict[str, bytes]:
 
 
 # ------------------------------------------------------------------------------------------------
-# patterns, allow-list, known secrets
+# local literals, allow-list, known secrets
 # ------------------------------------------------------------------------------------------------
 @dataclass
 class Patterns:
     literal_rx: re.Pattern | None
-    literal_ids: dict[str, list[str]]  # lowercased literal -> pattern ids
+    literal_rules: dict[str, list[str]]  # lowercased literal -> rule ids
     regexes: list[tuple[str, re.Pattern]]
     count: int
 
 
-def load_patterns(path: Path) -> Patterns:
-    try:
-        doc = json.loads(path.read_text())
-    except (OSError, ValueError) as e:
-        raise GateError(f"cannot read pattern file {path}: {type(e).__name__}") from None
-    entries = doc.get("patterns") if isinstance(doc, dict) else None
-    if not isinstance(entries, list) or not entries:
-        # An empty pattern file scans nothing while reporting clean.
-        raise GateError(f"pattern file {path} has no patterns")
+def load_local(path: Path | None) -> Patterns:
+    """The publisher's private literals and regexes (see the module docstring for the format).
+    An empty or unparseable file is an error: a gate told to use local knowledge and given none
+    would scan less than it was asked to while reporting clean."""
     lits: dict[str, list[str]] = {}
     regexes: list[tuple[str, re.Pattern]] = []
-    for i, e in enumerate(entries):
-        pid, kind = e.get("id"), e.get("kind")
-        if not pid or kind not in ("literal", "regex"):
-            raise GateError(f"pattern #{i} in {path} lacks an id or a valid kind")
-        if kind == "literal":
-            val = e.get("value")
-            if not isinstance(val, str) or len(val) < 3:
-                raise GateError(f"pattern {pid}: literal shorter than 3 characters")
-            lits.setdefault(val.lower(), []).append(pid)
-        else:
+    count = 0
+    if path is None:
+        return Patterns(None, lits, regexes, 0)
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise GateError(f"cannot read local file {path}: {type(e).__name__}") from None
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 2)
+        if parts[0] == "regex":
+            if len(parts) < 3:
+                raise GateError(f"{path}:{n}: a regex line is `regex <name> <pattern>`")
+            name, pat = parts[1], parts[2]
+            if ":" in name or name in dict(GENERIC_REGEXES):
+                raise GateError(f"{path}:{n}: regex name {name!r} collides with a rule id")
             try:
-                regexes.append((pid, re.compile(e["regex"])))
-            except (KeyError, re.error):
-                raise GateError(f"pattern {pid}: invalid regex") from None
+                regexes.append((name, re.compile(pat)))
+            except re.error:
+                raise GateError(f"{path}:{n}: invalid regex") from None
+        else:
+            if len(parts) < 2:
+                raise GateError(f"{path}:{n}: a literal line is `<category> <value>`")
+            cat, val = parts[0], line.split(None, 1)[1].strip()
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", cat) or cat == "regex":
+                raise GateError(f"{path}:{n}: {cat!r} is not a category name")
+            if len(val) < 3:
+                raise GateError(f"{path}:{n}: literal shorter than 3 characters")
+            lits.setdefault(val.lower(), []).append(f"{cat}:{val}")
+        count += 1
+    if not count:
+        raise GateError(f"local file {path} holds no literals or regexes")
     literal_rx = None
     if lits:
         alts = "|".join(re.escape(v) for v in sorted(lits, key=len, reverse=True))
         # Bounded by non-alphanumerics, so a hostname matches `host.lan`, `host-01` is NOT `host`.
         literal_rx = re.compile(r"(?<![A-Za-z0-9])(?:" + alts + r")(?![A-Za-z0-9])", re.I)
-    return Patterns(literal_rx, lits, regexes, len(entries))
+    return Patterns(literal_rx, lits, regexes, count)
 
 
 @dataclass
@@ -230,11 +307,24 @@ class AllowRule:
     pattern: str
     path_glob: str
     reason: str
+    source: str = ""
     used: int = 0
+
+    def matches(self, finding: Finding) -> bool:
+        if not fnmatch.fnmatchcase(finding.rule, self.pattern):
+            return False
+        loc = finding.location
+        if fnmatch.fnmatchcase(loc, self.path_glob):
+            return True
+        # One glob covers a tree path and the same path as built into the tarball.
+        return loc.startswith(TARBALL_PREFIX) and fnmatch.fnmatchcase(
+            loc[len(TARBALL_PREFIX) :], self.path_glob
+        )
 
 
 def load_allow(path: Path | None) -> list[AllowRule]:
-    """`<pattern-id-glob> <location-glob> <reason ...>` per line. A reason is mandatory."""
+    """`<rule-glob> <location-glob> <reason ...>` per line. A reason is mandatory, and a location
+    of `*` or `**` is refused: a rule that must be exempt everywhere is not a disclosure rule."""
     if path is None:
         return []
     rules = []
@@ -248,15 +338,16 @@ def load_allow(path: Path | None) -> list[AllowRule]:
             continue
         parts = line.split(None, 2)
         if len(parts) < 3 or len(parts[2].split()) < 3:
-            raise GateError(f"{path}:{n}: an exemption needs a pattern, a location and a reason")
-        rules.append(AllowRule(parts[0], parts[1], parts[2]))
+            raise GateError(f"{path}:{n}: an exemption needs a rule, a location and a reason")
+        if parts[1].strip("*") == "" or parts[1] in ("tarball:*", "tarball:**"):
+            raise GateError(f"{path}:{n}: a location of {parts[1]!r} exempts everywhere")
+        rules.append(AllowRule(parts[0], parts[1], parts[2], source=str(path)))
     return rules
 
 
 def load_known_secrets(cache: Path, declared: Path | None) -> dict[str, str]:
-    """{item label: value}. Every string in the cache
-    of at least KNOWN_SECRET_MIN_LEN characters, UNION the declared list. Labels never carry a value.
-    """
+    """{item label: value}. Every string in the cache of at least KNOWN_SECRET_MIN_LEN characters,
+    UNION the declared list. Labels never carry a value."""
     try:
         doc = json.loads(cache.read_text())
     except (OSError, ValueError) as e:
@@ -278,7 +369,7 @@ def load_known_secrets(cache: Path, declared: Path | None) -> dict[str, str]:
 
 
 def _read_declared(path: Path) -> dict[str, str]:
-    """scrub_declared.yml: a single mapping of name -> value (PyYAML if present, else flat parse)."""
+    """A single mapping of name -> value (PyYAML if present, else a flat parse)."""
     text = path.read_text()
     try:
         import yaml  # type: ignore[import-untyped]
@@ -299,7 +390,26 @@ def _read_declared(path: Path) -> dict[str, str]:
 # ------------------------------------------------------------------------------------------------
 # scanning text
 # ------------------------------------------------------------------------------------------------
-def _exempt(text: str) -> bool:
+def _exempt(rule: str, text: str) -> bool:
+    """A generic match that is a documented example or a fixture, never a disclosure."""
+    if rule == "mac":
+        octets = re.split(r"[:-]", text.lower())
+        first = int(octets[0], 16)
+        # bit 0: multicast/broadcast; bit 1: locally administered; all-zero: a placeholder.
+        return bool(first & 0b11) or set(octets) == {"00"}
+    if rule == "email":
+        domain = text.rpartition("@")[2]
+        return (
+            bool(EXEMPT_EMAIL.match(text))
+            or bool(EXEMPT_DOMAIN.search(domain))
+            or domain.rpartition(".")[2].lower() in SYSTEMD_UNIT_TYPES
+            # an iSCSI qualified name (iqn.yyyy-mm.reverse-domain:target) as a unit instance
+            or domain.lower().startswith("iqn.")
+        )
+    if rule == "steamid64":
+        return int(text) - STEAM_BASE < STEAM_MIN_ACCOUNT
+    if rule == "op-ref":
+        return False
     try:
         ip = ipaddress.ip_address(text.split("/")[0])
         return any(ip in n for n in EXEMPT_NETS)
@@ -329,14 +439,17 @@ def scan_text(
             seen.add((rule, ln))
             found.append(Finding(step_prefix + step, rule, location, ln, obj))
 
+    for rule, rx in GENERIC_REGEXES:
+        for m in rx.finditer(data):
+            if not _exempt(rule, m.group(0)):
+                add("literals", rule, m.start())
     if pats.literal_rx is not None:
         for m in pats.literal_rx.finditer(data):
-            for pid in pats.literal_ids.get(m.group(0).lower(), []):
-                add("literals", pid, m.start())
-    for pid, rx in pats.regexes:
+            for rule in pats.literal_rules.get(m.group(0).lower(), []):
+                add("literals", rule, m.start())
+    for rule, rx in pats.regexes:
         for m in rx.finditer(data):
-            if not _exempt(m.group(0)):
-                add("literals", pid, m.start())
+            add("literals", rule, m.start())
     if known_rx is not None and known:
         by_value = {v: k for k, v in known.items()}
         for m in known_rx.finditer(data):
@@ -355,82 +468,6 @@ def _known_rx(known: dict[str, str] | None) -> re.Pattern | None:
 # ------------------------------------------------------------------------------------------------
 # steps
 # ------------------------------------------------------------------------------------------------
-def read_manifest(repo: Path, sha: str, manifest: Path | None) -> set[str]:
-    if manifest is not None:
-        try:
-            text = manifest.read_text()
-        except OSError as e:
-            raise GateError(f"cannot read manifest {manifest}: {type(e).__name__}") from None
-    else:
-        proc = subprocess.run(
-            ["git", "-C", str(repo), "show", f"{sha}:export.manifest"],
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            raise GateError("no --manifest given and export.manifest is not in the tree at SHA")
-        text = proc.stdout.decode(errors="replace")
-    paths = {
-        ln.strip() for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
-    }
-    if not paths:
-        raise GateError("the export manifest lists no files")
-    return paths
-
-
-def history_pairs(repo: Path, *revs: str) -> set[tuple[str, str]]:
-    """Every (blob, path) pair in every commit reachable from `revs`, read tree by tree.
-
-    `rev-list --objects` names each blob ONCE, under the first path it meets, so a blob that also
-    sat at a second path would hide that path; walking each commit's tree does not.
-    """
-    pairs: set[tuple[str, str]] = set()
-    for commit in git(repo, "rev-list", *revs).decode().split():
-        for entry in (
-            git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
-            .decode(errors="replace")
-            .split("\0")
-        ):
-            meta, _, path = entry.partition("\t")
-            parts = meta.split()
-            if path and len(parts) == 3 and parts[1] == "blob":
-                pairs.add((parts[2], path))
-    return pairs
-
-
-def resolve_published(repo: Path, sha: str, published: str) -> str:
-    """The already-public commit, which must be an ancestor of (or equal to) SHA."""
-    if not re.fullmatch(r"[0-9a-f]{40}", published):
-        raise GateError("--published must be the full 40-hex commit id")
-    if not git(repo, "rev-parse", "--verify", "--quiet", f"{published}^{{commit}}").strip():
-        raise GateError(f"--published {published} is not a commit in {repo}")
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "merge-base", "--is-ancestor", published, sha], check=False
-    )
-    if proc.returncode != 0:
-        raise GateError(f"--published {published} is not an ancestor of {sha}")
-    return published
-
-
-def step_manifest(
-    repo: Path, sha: str, manifest: set[str], published: str | None = None
-) -> list[Finding]:
-    tree = set(git(repo, "ls-tree", "-r", "--name-only", "-z", sha).decode().split("\0")) - {""}
-    out = [Finding("manifest", "MANIFEST-01 unlisted file", p) for p in sorted(tree - manifest)]
-    out += [
-        Finding("manifest", "MANIFEST-02 listed file missing", p) for p in sorted(manifest - tree)
-    ]
-    # A path that existed only in an earlier commit is still published with the history — unless
-    # that exact content at that exact path is already public (`--published`).
-    public = history_pairs(repo, published) if published else set()
-    unlisted = {
-        p for o, p in history_pairs(repo, "--all", sha) - public if p not in manifest | tree
-    }
-    for p in sorted(unlisted):
-        out.append(Finding("manifest", "MANIFEST-03 unlisted path in history", p))
-    return out
-
-
 def _tool(name: str, allow_missing: set[str], report: Report) -> str | None:
     exe = shutil.which(name)
     if exe:
@@ -445,12 +482,12 @@ def _tool(name: str, allow_missing: set[str], report: Report) -> str | None:
 
 
 def run_gitleaks(
-    exe: str, target: Path, config: Path, history_sha: str | None, step: str
+    exe: str, target: Path, config: Path, log_opts: str | None, step: str
 ) -> list[Finding]:
     with tempfile.TemporaryDirectory() as td:
         rpt = Path(td) / "gitleaks.json"
-        if history_sha:
-            mode = ["git", str(target), f"--log-opts=--all {history_sha}"]
+        if log_opts:
+            mode = ["git", str(target), f"--log-opts={log_opts}"]
         else:
             mode = ["dir", str(target)]
         cmd = [
@@ -472,7 +509,7 @@ def run_gitleaks(
     out = []
     for it in items:
         loc = it.get("File", "?")
-        if not history_sha:
+        if not log_opts:
             loc = str(Path(loc).resolve().relative_to(target.resolve())) if loc != "?" else loc
         out.append(
             Finding(
@@ -486,8 +523,15 @@ def run_gitleaks(
     return out
 
 
-def run_trufflehog(exe: str, target: Path, history: bool, step: str) -> list[Finding]:
-    mode = ["git", "file://" + str(target.resolve())] if history else ["filesystem", str(target)]
+def run_trufflehog(
+    exe: str, target: Path, step: str, sha: str | None = None, since: str | None = None
+) -> list[Finding]:
+    if sha:
+        mode = ["git", "file://" + str(target.resolve()), "--branch", sha]
+        if since:
+            mode += ["--since-commit", since]
+    else:
+        mode = ["filesystem", str(target)]
     cmd = [
         exe,
         *mode,
@@ -511,7 +555,7 @@ def run_trufflehog(exe: str, target: Path, history: bool, step: str) -> list[Fin
         meta = (r.get("SourceMetadata") or {}).get("Data") or {}
         src = meta.get("Git") or meta.get("Filesystem") or {}
         loc = src.get("file", "?")
-        if not history and loc != "?":
+        if not sha and loc != "?":
             try:
                 loc = str(Path(loc).resolve().relative_to(target.resolve()))
             except ValueError:
@@ -530,7 +574,9 @@ def run_trufflehog(exe: str, target: Path, history: bool, step: str) -> list[Fin
     return out
 
 
-def step_history_text(repo: Path, sha: str, objects, pats, known, known_rx) -> list[Finding]:
+def step_history_text(
+    repo: Path, sha: str, since: str | None, objects, pats, known, known_rx
+) -> list[Finding]:
     blobs = blob_contents(repo, sorted({o for o, p in objects if p}))
     paths: dict[str, str] = {}
     for o, p in objects:
@@ -546,9 +592,10 @@ def step_history_text(repo: Path, sha: str, objects, pats, known, known_rx) -> l
             known_rx,
             obj,
         )
-    # Commit messages and identities: a private repo's messages are full of topology, and an author email is
-    # the most direct identifier there is.
-    log = git(repo, "log", "--all", sha, "-z", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B")
+    # Commit messages and identities: a private repo's messages are full of topology, and an
+    # author email is the most direct identifier there is.
+    rng = f"{since}..{sha}" if since else sha
+    log = git(repo, "log", rng, "-z", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B")
     for rec in log.decode(errors="replace").split("\0"):
         if not rec.strip():
             continue
@@ -559,20 +606,21 @@ def step_history_text(repo: Path, sha: str, objects, pats, known, known_rx) -> l
             ("committer-name", cn), ("committer-email", ce),
         ):  # fmt: skip
             out += scan_text(text, f"commit:{h[:12]}:{label}", pats, known, known_rx, h)
-    tags = git(
-        repo, "for-each-ref", "refs/tags", "--format=%(objecttype) %(refname:short)"
-    ).decode()
-    for line in tags.splitlines():
-        kind, _, name = line.partition(" ")
-        if kind == "tag":
-            body = git(repo, "cat-file", "tag", f"refs/tags/{name}").decode(errors="replace")
-            out += scan_text(body, f"tag:{name}", pats, known, known_rx)
+    if since is None:
+        tags = git(
+            repo, "for-each-ref", "refs/tags", "--format=%(objecttype) %(refname:short)"
+        ).decode()
+        for line in tags.splitlines():
+            kind, _, name = line.partition(" ")
+            if kind == "tag":
+                body = git(repo, "cat-file", "tag", f"refs/tags/{name}").decode(errors="replace")
+                out += scan_text(body, f"tag:{name}", pats, known, known_rx)
     return out
 
 
 def step_artifact(
     tarball: Path,
-    manifest: set[str],
+    tree: set[str],
     pats,
     known,
     known_rx,
@@ -591,8 +639,8 @@ def step_artifact(
                 out.append(Finding("artifact", "ARTIFACT-02 non-regular member", m.name))
         for m in members:
             name = m.name.removeprefix("./")
-            if name not in manifest and name not in GALAXY_GENERATED:
-                out.append(Finding("artifact", "ARTIFACT-01 file not in manifest", name))
+            if name not in tree and name not in GALAXY_GENERATED:
+                out.append(Finding("artifact", "ARTIFACT-01 file not in the tree at SHA", name))
         dest = Path(td) / "unpacked"
         dest.mkdir()
         try:
@@ -603,7 +651,7 @@ def step_artifact(
             rel = str(f.relative_to(dest))
             out += scan_text(
                 f.read_text("utf-8", errors="replace"),
-                f"tarball:{rel}",
+                TARBALL_PREFIX + rel,
                 pats,
                 known,
                 known_rx,
@@ -612,7 +660,7 @@ def step_artifact(
         if gl_exe:
             out += run_gitleaks(gl_exe, dest, gl_cfg, None, "artifact-secrets")
         if th_exe:
-            out += run_trufflehog(th_exe, dest, False, "artifact-secrets")
+            out += run_trufflehog(th_exe, dest, "artifact-secrets")
     return out
 
 
@@ -620,15 +668,7 @@ def step_artifact(
 def apply_allow(findings: list[Finding], rules: list[AllowRule], report: Report) -> list[Finding]:
     kept = []
     for f in findings:
-        rule = next(
-            (
-                r
-                for r in rules
-                if fnmatch.fnmatchcase(f.rule, r.pattern)
-                and fnmatch.fnmatchcase(f.location, r.path_glob)
-            ),
-            None,
-        )
+        rule = next((r for r in rules if r.matches(f)), None)
         if rule is None:
             kept.append(f)
         else:
@@ -639,6 +679,7 @@ def apply_allow(findings: list[Finding], rules: list[AllowRule], report: Report)
                 "pattern": r.pattern,
                 "location": r.path_glob,
                 "reason": r.reason,
+                "file": r.source,
                 "matched": r.used,
             }
         )
@@ -657,8 +698,9 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
             )
         sha = resolve_commit(repo, args.sha)
         report.sha = sha
-        pats = load_patterns(Path(args.patterns))
-        allow = load_allow(Path(args.allow) if args.allow else None)
+        since = resolve_since(repo, sha, args.since) if args.since else None
+        pats = load_local(Path(args.local) if args.local else None)
+        allow = [rule for a in args.allow or [] for rule in load_allow(Path(a))]
         if args.secrets_cache:
             known = load_known_secrets(
                 Path(args.secrets_cache),
@@ -666,7 +708,7 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
             )
         elif "secrets-cache" in allow_missing:
             known = None
-            report.notes.append("no secrets cache given; step 4 explicitly skipped")
+            report.notes.append("no secrets cache given; the known-value check explicitly skipped")
         else:
             raise GateError("--secrets-cache is required (or --allow-missing secrets-cache)")
         known_rx = _known_rx(known)
@@ -675,15 +717,11 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
             raise GateError(f"gitleaks config {gl_cfg} does not exist")
         gl_exe = _tool("gitleaks", allow_missing, report)
         th_exe = _tool("trufflehog", allow_missing, report)
-
-        manifest = read_manifest(repo, sha, Path(args.manifest) if args.manifest else None)
-        published = resolve_published(repo, sha, args.published) if args.published else None
-        if published:
-            report.notes.append(
-                f"--published {published}: paths deleted since, with only already-public blobs, "
-                "are exempt from MANIFEST-03"
-            )
-        objects = all_objects(repo, sha)
+        if since:
+            report.notes.append(f"--since {since}: only what is new since it is scanned")
+        objects = new_objects(repo, sha, since)
+        tree = set(git(repo, "ls-tree", "-r", "--name-only", "-z", sha).decode().split("\0"))
+        tree.discard("")
 
         findings: list[Finding] = []
 
@@ -691,19 +729,21 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
             report.steps[name] = {"status": "running"}
             got = fn()
             findings.extend(got)
-            report.steps[name].update(status="fail" if got else "pass", findings=len(got))
+            # The status is the step's RAW verdict; exemptions are applied to the whole set
+            # below, and `findings` in the top level is what decides the exit code.
+            report.steps[name].update(status="fail" if got else "pass", raw_findings=len(got))
 
-        step("manifest", lambda: step_manifest(repo, sha, manifest, published))
+        log_opts = f"{since}..{sha}" if since else sha
         step(
             "secrets",
             lambda: (
-                (run_gitleaks(gl_exe, repo, gl_cfg, sha, "secrets") if gl_exe else [])
-                + (run_trufflehog(th_exe, repo, True, "secrets") if th_exe else [])
+                (run_gitleaks(gl_exe, repo, gl_cfg, log_opts, "secrets") if gl_exe else [])
+                + (run_trufflehog(th_exe, repo, "secrets", sha, since) if th_exe else [])
             ),
         )
         step(
             "literals+known",
-            lambda: step_history_text(repo, sha, objects, pats, known, known_rx),
+            lambda: step_history_text(repo, sha, since, objects, pats, known, known_rx),
         )
         if args.tarball:
             report.steps["artifact"] = {}
@@ -711,7 +751,7 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
                 "artifact",
                 lambda: step_artifact(
                     Path(args.tarball),
-                    manifest,
+                    tree,
                     pats,
                     known,
                     known_rx,
@@ -722,7 +762,8 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
                 ),
             )
         report.steps.setdefault("scope", {}).update(
-            objects=len(objects), patterns=pats.count, known_secrets=len(known or {}),
+            since=since, objects=len(objects), generic_rules=len(GENERIC_REGEXES),
+            local_patterns=pats.count, known_secrets=len(known or {}),
             missing_allowed=sorted(allow_missing),
         )  # fmt: skip
         report.findings = apply_allow(findings, allow, report)
@@ -735,7 +776,7 @@ def run(args: argparse.Namespace) -> tuple[int, Report]:
 def render(report: Report, rc: int) -> dict:
     return {
         "tool": "disclose",
-        "version": 1,
+        "version": 2,
         "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "repo": report.repo,
         "sha": report.sha,
@@ -752,21 +793,24 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--repo", required=True)
     ap.add_argument("--sha", required=True)
-    ap.add_argument("--patterns", required=True, help="PRIVATE pattern file (JSON)")
-    ap.add_argument("--manifest", help="default: export.manifest in the tree at SHA")
-    ap.add_argument("--allow", help="exemptions: <pattern-id> <location-glob> <reason>")
+    ap.add_argument(
+        "--since",
+        metavar="COMMIT",
+        help="an ancestor of SHA that is already public: scan only what is new since it "
+        "(default: the whole history of SHA)",
+    )
+    ap.add_argument("--local", help="PRIVATE literals and regexes (plain text; see --help header)")
+    ap.add_argument(
+        "--allow",
+        action="append",
+        help="exemptions: <rule-glob> <location-glob> <reason>; repeatable, all files apply",
+    )
     ap.add_argument("--secrets-cache", help="credential cache JSON (values are never printed)")
     ap.add_argument("--secrets-declared", help="declared extra secret values (YAML mapping)")
     ap.add_argument("--tarball", help="a built collection tarball to check as well")
     ap.add_argument("--gitleaks-config", help=f"default: {DEFAULT_GITLEAKS_CONFIG.name}")
     ap.add_argument("--allow-missing", action="append", metavar="TOOL")
     ap.add_argument("--report", help="write the JSON report here (default: stdout)")
-    ap.add_argument(
-        "--published",
-        metavar="COMMIT",
-        help="an ancestor of SHA that is already public (the remote's main): a path deleted since, "
-        "whose every blob it already carried, is not MANIFEST-03",
-    )
     args = ap.parse_args(argv)
 
     rc, report = run(args)

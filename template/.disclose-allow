@@ -1,0 +1,4 @@
+# .disclose-allow — exemptions for THIS repository's own fixtures, read by the shared disclose
+# workflow from the pull request's BASE (so a pull request cannot widen the exemptions that judge
+# it). One per line: <rule-glob> <location-glob> <reason of three words or more>. A location glob
+# covers a tree path and the same path inside the built tarball. See `devkit disclose --help`.

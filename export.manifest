@@ -1,5 +1,6 @@
 # export.manifest — every path in this repository, one per line (the disclosure gate's manifest
 # step compares it against the tree at the scanned commit and against every path in the history).
+.disclose-allow
 .github/actionlint.yaml
 .github/workflows/ci.yml
 .github/workflows/disclose.yml
@@ -45,6 +46,7 @@ src/ansible_devkit/disclose/__init__.py
 src/ansible_devkit/disclose/disclose.py
 src/ansible_devkit/disclose/gitleaks-base.toml
 src/ansible_devkit/scripts/affected-scenarios.sh
+template/.disclose-allow
 template/.github/actionlint.yaml
 template/.github/workflows/ci.yml.jinja
 template/.github/workflows/disclose.yml.jinja

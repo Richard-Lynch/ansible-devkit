@@ -82,7 +82,7 @@ ansible_core:
 devkit_ref:
   type: str
   help: The ansible-devkit release tag the three workflows call (vMAJOR.MINOR.PATCH)
-  default: "v0.2.3"
+  default: "v0.3.0"
   validator: >-
     {% set p = devkit_ref[1:].split('.') %}{% if not devkit_ref.startswith('v') or p | length != 3
     or not (p[0].isdigit() and p[1].isdigit() and p[2].isdigit()) %}a release tag such as

@@ -4,6 +4,39 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.3.0] — 2026-11-04
+
+### Changed
+
+- **`devkit disclose` is the one scanner, and it ships no estate values.** The private pattern
+  file (`--patterns`) is gone. In its place: GENERIC rules that need no input — `rfc1918-10`,
+  `rfc1918-172`, `rfc1918-192`, `rfc6598-100` (private and shared IPv4 ranges), `mac` (a
+  universally-administered unicast MAC; a locally-administered, multicast or all-zero one is a
+  fixture), `email` (outside the RFC 2606 names; a noreply mailbox, the `git@` user of an SSH
+  URL, a systemd `unit@instance.service` name and an iSCSI `@iqn.` instance are not addresses),
+  `steamid64` (an account id of 1000 or more) and `op-ref` (an `op://` reference that starts
+  with a vault name) — and an optional `--local FILE` of the publisher's own literals and
+  regexes, plain text, one per line (`<category> <value>` / `regex <name> <pattern>`). A local
+  literal's rule is `<category>:<value>`, so an exemption names the literal in plain text; the
+  local file and the report of a run that used it are private by construction.
+- **Scope**: `--since COMMIT` (an already-public ancestor of the scanned commit) scans only the
+  blobs, commit messages and identities new since it, which is what a push adds. Without it the
+  whole history of the commit is scanned. `--published` is gone; so is the manifest step
+  (`MANIFEST-01..03`): the tree-equals-manifest check is `devkit conform` CONFORM-10, and the
+  built tarball's members are checked against the tree at the scanned commit (`ARTIFACT-01`).
+- **One allow line covers a tree path and the same path inside the tarball**: a `tarball:`
+  twin line is no longer needed (an explicit `tarball:<glob>` still works). A location of `*`
+  or `**` is refused (exit 2), and so is a local file that holds no entries or does not parse.
+- The report's per-step `status` is the step's raw verdict (before exemptions), labelled as such
+  (`raw_findings`); the top-level `result` and `findings` are what decide the exit code.
+
+### Added
+
+- `.disclose-allow` at the repository root, here and in the collection template: the
+  exemptions for a repository's OWN fixtures (a molecule default address, a synthetic key, a
+  test email), in the same `<rule-glob> <location-glob> <reason>` form. The next release's
+  shared `disclose` workflow reads it from the pull request's base.
+
 ## [0.2.3] — 2026-11-03
 
 ### Added
