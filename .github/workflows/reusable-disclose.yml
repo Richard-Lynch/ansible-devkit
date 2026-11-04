@@ -1,50 +1,38 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# reusable-disclose — re-run the GENERIC half of the disclosure gate on every pull request, for
-# every repo built on ansible-devkit.
+# reusable-disclose — run the disclosure gate's GENERIC rules on every pull request, for every repo
+# built on ansible-devkit, with no private input at all.
 #
 # Caller (thin `disclose.yml` in each repo; devkit itself uses ./). The caller's job id MUST be
-# `disclose`: the required status check is named `disclose / gate`.
-#   on: {pull_request: {}}
+# `disclose`: the required status check is named `disclose / gate`. It passes NO secrets.
+#   on: {pull_request: {types: [opened, synchronize, reopened, edited]}}
 #   jobs:
 #     disclose:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.2.3
-#       secrets:
-#         DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
-#         DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-disclose.yml@v0.3.1
 #
-# The private repository that publishes here runs the full gate (manifest, secrets over the whole history, estate literals,
-# known secret values) before any push to this repository. This workflow re-runs the same tool on
-# every PR so a later change cannot reintroduce what the first push was checked for. The pattern
-# file names an estate, so it never lives in this repo: it arrives as the DISCLOSE_PATTERNS secret
-# and is written to a temp file for the one step that reads it.
+# The private repository that publishes here runs the SAME scanner before any push, with two
+# private inputs added (its own literals, its known secret values). This workflow is the public
+# half: the generic rules (private address ranges, device MACs, email addresses, SteamID64s,
+# op:// references), gitleaks and trufflehog, over what the pull request ADDS (`--since` its base),
+# so that a change made outside the publisher's gate — a web edit, a fork, an un-hooked push —
+# still meets the rules that need no estate knowledge. Nothing private is reachable from here.
 #
-# FAILS CLOSED. No secret (a fork, a misconfigured repo) is a failed run, not a skipped step: a gate
-# that passes because it had nothing to check is the failure mode this package exists to catch.
-# The two scanners are installed from pinned release tarballs whose sha256 is verified here.
+# FAILS CLOSED. A scanner that cannot be installed, a base that cannot be resolved, a gate error:
+# a failed run, never a skipped step.
 #
 # THE PR IS DATA, NEVER CODE. The pull request is checked out into scan/ and only read. `devkit` is
 # installed from a TRUSTED commit — this shared workflow's own commit (job.workflow_sha) or, when a
-# repository calls its own copy (devkit itself), the PR's BASE commit — so a PR can neither run
-# code next to DISCLOSE_PATTERNS nor change the implementation that judges it.
-#
-# The exemptions (DISCLOSE_ALLOW) also arrive as a secret from the publisher, never from the
-# repository, so a PR cannot widen the exemptions that judge it.
+# repository calls its own copy (devkit itself), the PR's BASE commit — so a PR cannot change the
+# implementation that judges it. The exemptions for the repository's own fixtures come from
+# `.disclose-allow` at the PR's BASE, never from the PR head, so a PR cannot widen the exemptions
+# that judge it; a new fixture exemption lands in its own pull request first.
 #
 # `--allow-missing secrets-cache`: the known-secret-VALUE check needs the publisher's private
-# credential cache, which CI never has. That check runs in the publisher's own gate before every
-# push; this workflow re-runs everything that can run without private values.
+# credential cache, which CI never has. It runs in the publisher's own gate before every push.
 name: reusable-disclose
 
 on:
   workflow_call:
-    secrets:
-      DISCLOSE_ALLOW:
-        description: The publisher's exemption list (owner login locations etc.), set by its tooling.
-        required: false
-      DISCLOSE_PATTERNS:
-        description: The publishing repository's private pattern file (set by its owner's tooling).
-        required: false
 
 permissions:
   contents: read
@@ -63,13 +51,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: scan
-          # The gate scans every blob reachable from any ref, every commit message and author.
+          # The gate reads every blob the PR adds and, without a base, the whole history.
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          # No cache in the job that holds the pattern secret: a cache can be written by jobs that
-          # run PR code.
           enable-cache: false
       - name: Install the scanners (pinned, checksummed)
         run: |
@@ -111,63 +97,52 @@ jobs:
           ref: ${{ steps.trusted.outputs.sha }}
           path: devkit
           persist-credentials: false
-
       - name: Install devkit from its lockfile
         env:
           UV_NO_CACHE: "1"
         run: uv sync --frozen --no-dev --project devkit
-
-      - name: Write the private pattern and exemption files (fails if either secret is absent)
+      - name: Read the exemptions from the pull request's BASE (never from the PR)
+        id: allow
         env:
-          DISCLOSE_PATTERNS: ${{ secrets.DISCLOSE_PATTERNS }}
-          DISCLOSE_ALLOW: ${{ secrets.DISCLOSE_ALLOW }}
-        run: |
-          set -euo pipefail
-          for v in DISCLOSE_PATTERNS DISCLOSE_ALLOW; do
-            if [ -z "${!v}" ]; then
-              echo "::error::$v is not set; the gate cannot run and must not pass" >&2
-              exit 2
-            fi
-          done
-          umask 077
-          printf '%s' "${DISCLOSE_PATTERNS}" > "${RUNNER_TEMP}/patterns.json"
-          printf '%s\n' "${DISCLOSE_ALLOW}" > "${RUNNER_TEMP}/allow.txt"
-      - name: devkit disclose
-        env:
-          # The merge commit CI checked out: reachable from the PR's merge ref, so the full-history
-          # scanners and the gate agree on scope.
-          SHA: ${{ github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # Only a base on the protected default branch is trusted to supply exemptions (and to be
+          # "already public" for --since); any other base gets neither.
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ] || ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "base '$BASE_REF' is not the default branch '$DEFAULT_BRANCH': full scan, no exemptions"
+            echo "since=" >> "$GITHUB_OUTPUT"
+            echo "allow=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "since=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          if git -C scan cat-file -e "${BASE_SHA}:.disclose-allow" 2>/dev/null; then
+            git -C scan show "${BASE_SHA}:.disclose-allow" > "${RUNNER_TEMP}/allow.txt"
+            n=$(grep -cvE '^\s*(#|$)' "${RUNNER_TEMP}/allow.txt" || true)
+            echo ".disclose-allow at the base: $n exemption line(s)"
+            echo "allow=${RUNNER_TEMP}/allow.txt" >> "$GITHUB_OUTPUT"
+          else
+            echo "no .disclose-allow at the base: no exemptions"
+            echo "allow=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: devkit disclose
+        env:
+          # The merge commit CI checked out: reachable from the PR's merge ref.
+          SHA: ${{ github.sha }}
+          SINCE: ${{ steps.allow.outputs.since }}
+          ALLOW: ${{ steps.allow.outputs.allow }}
           UV_NO_CACHE: "1"
         run: |
           set -euo pipefail
-          # --published: the PR's base is the protected default branch, i.e. already public, so a
-          # path the PR DELETES is not "unlisted history" while every blob it held there is already
-          # public. Only for a PR into the default branch; any other base gets no exemption.
-          # The TRUSTED devkit may predate --published (a devkit PR is judged by its BASE commit's
-          # devkit), so the flag is passed only when that devkit offers it; without it there is no
-          # exemption, which is the old, stricter behaviour. Help text is captured, not piped into
-          # grep -q, which under pipefail can invert the test.
-          help=$(uv run --frozen --no-dev --project devkit devkit disclose --help)
-          supports=false
-          case "$help" in *--published*) supports=true ;; esac
-          published=()
-          if [ "$supports" != true ]; then
-            echo "trusted devkit has no --published: no MANIFEST-03 exemption"
-          elif [ "$BASE_REF" = "$DEFAULT_BRANCH" ] && [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            published=(--published "$BASE_SHA")
-            echo "published (already-public) base: $BASE_SHA"
-          else
-            echo "no published base (base '$BASE_REF', default '$DEFAULT_BRANCH'): no MANIFEST-03 exemption"
-          fi
+          args=()
+          [ -n "$SINCE" ] && args+=(--since "$SINCE")
+          [ -n "$ALLOW" ] && args+=(--allow "$ALLOW")
           uv run --frozen --no-dev --project devkit \
             devkit disclose --repo "$GITHUB_WORKSPACE/scan" --sha "${SHA}" \
-            --patterns "${RUNNER_TEMP}/patterns.json" \
-            --allow "${RUNNER_TEMP}/allow.txt" \
             --allow-missing secrets-cache \
-            "${published[@]}" \
+            "${args[@]}" \
             --report "${RUNNER_TEMP}/disclose-report.json"
       - name: Report (findings name a rule and a location, never a value)
         if: always()

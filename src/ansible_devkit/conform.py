@@ -12,8 +12,9 @@ package's template (copier.yml, template/) generates:
   CONFORM-04  the `uses:` ref is a release tag, vMAJOR.MINOR.PATCH — never a branch
   CONFORM-05  ci and release pass `kind:` matching the repository (galaxy.yml: collection,
               pyproject.toml: python); ci's `ansible_core`, when given, is a JSON list of "X.Y"
-  CONFORM-06  release passes `secrets: inherit`; disclose passes DISCLOSE_PATTERNS and
-              DISCLOSE_ALLOW from the repository's secrets
+  CONFORM-06  release passes `secrets: inherit`; disclose passes NO secrets (the gate's generic
+              rules need no private input, and a secret the shared workflow does not declare is a
+              workflow error)
   CONFORM-07  triggers: ci on push to main and pull_request; release on push to main; disclose on
               pull_request types opened, synchronize, reopened and edited — with no other filter
               (paths, branches-ignore, a second branch ...) and no `if:` on the caller job
@@ -27,6 +28,9 @@ package's template (copier.yml, template/) generates:
   CONFORM-13  in a collection, every roles/<role>/ has a README.md and a meta/main.yml whose
               galaxy_info.description is a non-empty string (Galaxy's importer rejects a role with
               no README, and shows no description for a role without one)
+  CONFORM-14  `.disclose-allow` exists and every line of it is an exemption the disclose gate
+              accepts: `<rule-glob> <location-glob> <reason of three words or more>`, a location
+              that is not `*`; the shared disclose workflow reads it from a pull request's base
 
 One line per problem on stdout, `<path>: <RULE> <message>`. Exit 0 when the repository meets the
 standard, 1 when it does not, 2 when a rule could not be evaluated (no git repository, an
@@ -56,7 +60,6 @@ CORE_RE = re.compile(r"\d+\.\d+")
 SPDX_RE = re.compile(r"SPDX-License-Identifier:\s*GPL-3\.0-or-later\b")
 SPDX_HEAD_LINES = 5
 DISCLOSE_TYPES = ("opened", "synchronize", "reopened", "edited")
-DISCLOSE_SECRETS = ("DISCLOSE_PATTERNS", "DISCLOSE_ALLOW")
 
 
 @dataclass(frozen=True)
@@ -272,16 +275,14 @@ def _check_secrets(c: Caller, job: dict, rel: str) -> list[Problem]:
                 "arrive empty otherwise)",
             )
         ]
-    if c.job == "disclose":
-        secrets = secrets if isinstance(secrets, dict) else {}
+    if c.job == "disclose" and secrets is not None:
         return [
             Problem(
                 rel,
                 "CONFORM-06",
-                f"job `disclose` must pass {s}: ${{{{ secrets.{s} }}}}",
+                "job `disclose` passes secrets; the shared gate takes none (its rules need no "
+                "private input, and an undeclared secret is a workflow error)",
             )
-            for s in DISCLOSE_SECRETS
-            if re.fullmatch(rf"\$\{{\{{\s*secrets\.{s}\s*\}}\}}", str(secrets.get(s, ""))) is None
         ]
     return []
 
@@ -503,6 +504,40 @@ def check_roles(root: Path) -> list[Problem]:
     return out
 
 
+def check_disclose_allow(root: Path) -> list[Problem]:
+    """`.disclose-allow` exists and parses the way `devkit disclose --allow` reads it, so the shared
+    workflow never meets a file it must refuse (which would fail every pull request of the repo)."""
+    rel = ".disclose-allow"
+    path = root / rel
+    if not path.is_file():
+        return [
+            Problem(rel, "CONFORM-14", "missing (the disclose workflow reads it from the base)")
+        ]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return [Problem(rel, "CONFORM-14", f"unreadable: {exc}", unchecked=True)]
+    out: list[Problem] = []
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 2)
+        if len(parts) < 3 or len(parts[2].split()) < 3:
+            out.append(
+                Problem(
+                    f"{rel}:{n}",
+                    "CONFORM-14",
+                    "an exemption needs a rule, a location and a reason of three words or more",
+                )
+            )
+        elif parts[1].strip("*") == "" or parts[1] in ("tarball:*", "tarball:**"):
+            out.append(
+                Problem(f"{rel}:{n}", "CONFORM-14", f"location {parts[1]!r} exempts everywhere")
+            )
+    return out
+
+
 def conform(root: Path) -> list[Problem]:
     tracked = tracked_files(root)
     return [
@@ -513,6 +548,7 @@ def conform(root: Path) -> list[Problem]:
         *check_spdx(root, tracked),
         *check_actionlint(root),
         *check_roles(root),
+        *check_disclose_allow(root),
     ]
 
 

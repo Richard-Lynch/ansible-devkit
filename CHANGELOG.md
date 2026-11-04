@@ -4,6 +4,27 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.3.1] — 2026-11-04
+
+### Changed
+
+- **`reusable-disclose.yml` takes no secrets and needs no private input.** It runs
+  `devkit disclose` with the generic rules over what the pull request adds (`--since` the base
+  when the base is the default branch; the whole history otherwise), gitleaks and trufflehog
+  included, and reads the repository's own fixture exemptions from `.disclose-allow` at the pull
+  request's BASE — never from the head, so a pull request cannot widen the exemptions that judge
+  it. The `DISCLOSE_PATTERNS` and `DISCLOSE_ALLOW` secrets are no longer read; a caller that still
+  passes them is a workflow error, and `devkit conform` **CONFORM-06** now requires the `disclose`
+  caller to pass no secrets. The template's `disclose.yml` and this repository's own are updated.
+
+### Added
+
+- `devkit conform` rule **`CONFORM-14`**: `.disclose-allow` exists and every line of it is an
+  exemption the gate accepts (a rule, a location that is not `*`, a reason of three words or
+  more). The shared workflow reads the file from a pull request's base, so a file the gate would
+  refuse fails every pull request of the repository; this catches it in the pull request that
+  writes it.
+
 ## [0.3.0] — 2026-11-04
 
 ### Changed
