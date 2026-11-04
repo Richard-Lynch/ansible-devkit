@@ -122,4 +122,29 @@ def test_generated_repository_has_python_version_and_renovate(tmp_path: Path) ->
     import json
 
     cfg = json.loads((out / "renovate.json").read_text())
-    assert cfg["extends"] == ["local>Richard-Lynch/ansible-devkit//renovate/default"]
+    assert cfg["extends"] == [
+        f"github>Richard-Lynch/ansible-devkit//renovate/default#v{__version__}"
+    ]
+    # The repository's own rules come AFTER the preset: everything off, then actions/* patches.
+    rules = cfg["packageRules"]
+    assert rules[0] == {**rules[0], "matchPackageNames": ["/.*/"], "automerge": False}
+    assert any(
+        r.get("matchDatasources") == ["galaxy-collection", "galaxy"] and r["automerge"] is False
+        for r in rules
+    )
+    ok = [r for r in rules if r.get("automerge")]
+    assert len(ok) == 1 and ok[0]["matchPackageNames"] == ["actions/**"]
+    assert ok[0]["matchUpdateTypes"] == ["patch"] and ok[0]["minimumReleaseAge"]
+
+
+def test_preset_never_turns_automerge_on() -> None:
+    import json
+
+    preset = json.loads((ROOT / "renovate/default.json").read_text())
+    assert preset.get("automerge") is False
+    assert preset["lockFileMaintenance"]["automerge"] is False
+    assert not [r for r in preset["packageRules"] if r.get("automerge")]
+    own = json.loads((ROOT / "renovate.json").read_text())
+    assert own["extends"] == [
+        f"github>Richard-Lynch/ansible-devkit//renovate/default#v{__version__}"
+    ]
