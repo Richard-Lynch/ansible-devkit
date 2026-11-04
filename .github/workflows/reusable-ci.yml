@@ -9,7 +9,7 @@
 #   on: {push: {branches: [main]}, pull_request: {}}
 #   jobs:
 #     ci:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.3.1
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.3.2
 #       with: {kind: python}            # or kind: collection
 #
 # every kind       actionlint over the caller's workflows (reads the caller's .github/actionlint.yaml).

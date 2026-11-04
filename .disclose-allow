@@ -3,9 +3,6 @@
 # it). One per line: <rule-glob> <location-glob> <reason of three words or more>. A location glob
 # covers a tree path and the same path inside a built tarball. See `devkit disclose --help`.
 #
-# The gate's own suite plants a value for every generic rule to prove it fires. The private
-# addresses are assembled at run time; the MAC, the op:// reference and the address outside the
-# RFC 2606 names are written out, synthetic, and the file is the fixture.
-email   tests/suites/test_disclose.py  synthetic owner address in the gate's own fixtures
-mac     tests/suites/test_disclose.py  synthetic device MAC in the gate's own fixtures
-op-ref  tests/suites/test_disclose.py  synthetic op:// reference in the gate's own fixtures
+# Nothing is exempted: the gate's own suite assembles every planted value at run time, so no file
+# here carries one. In particular no generic `mac` line exists — a fixture MAC is locally
+# administered (the second-lowest bit of its first octet set) and needs no exemption.
