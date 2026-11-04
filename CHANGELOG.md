@@ -4,6 +4,15 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.3.2] — 2026-11-04
+
+### Changed
+
+- The gate's own suite assembles every planted fixture value at run time (the device MAC, the
+  `op://` reference and the non-example email, as the private addresses already were), so this
+  repository's `.disclose-allow` exempts nothing. A path-scoped generic `mac` exemption would
+  read as if it covered a real device; a fixture MAC is locally administered instead.
+
 ## [0.3.1] — 2026-11-04
 
 ### Changed

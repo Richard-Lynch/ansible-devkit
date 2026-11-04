@@ -45,18 +45,21 @@ PRIV_172, PRIV_192, SHARED_100 = (
     for parts in (["172", "16", "5", "9"], ["192", "168", "7", "8"], ["100", "64", "3", "4"])
 )
 NEAR_172, NEAR_100 = "172.32.0.1", "100.128.0.1"
-MAC_DEVICE, MAC_DEVICE_DASH = "4c:eb:42:1f:9a:07", "4c-eb-42-1f-9a-08"
+# Assembled at run time, like the addresses: the suite's own file must carry no planted value, so
+# the repository needs no exemption for it (and no generic `mac` exemption exists anywhere).
+MAC_DEVICE = ":".join(["4c", "eb", "42", "1f", "9a", "07"])
+MAC_DEVICE_DASH = "-".join(["4c", "eb", "42", "1f", "9a", "08"])
 MAC_LOCAL, MAC_BCAST, MAC_ZERO = (
     "02:00:5e:00:00:01",
     "ff:ff:ff:ff:ff:ff",
     "00:00:00:00:00:00",
 )
-EMAIL_REAL = "@".join(["someone", "estate-synthetic.net"])
+EMAIL_REAL = "@".join(["someone", "estate-synthetic" + ".net"])
 EMAIL_NOREPLY = "12345+someone@users.noreply.github.com"
 STEAM_BASE = 76561197960265728
 STEAM_REAL = str(STEAM_BASE + 4000000)
 STEAM_FIXTURE = str(STEAM_BASE + 1)
-OP_REF = "op://Synthetic-Vault/some-item/password"
+OP_REF = "op:" + "//Synthetic-Vault/some-item/password"
 
 LOCAL = (
     f"host {HOST}\nvault {VAULT}\ndomain {DOMAIN}\nregex item-prefix \\bvaultpath/[a-z]+/[a-z-]+\n"
