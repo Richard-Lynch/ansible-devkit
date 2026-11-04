@@ -9,7 +9,7 @@
 #   on: {push: {branches: [main]}, pull_request: {}}
 #   jobs:
 #     ci:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.3.2
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-ci.yml@v0.4.0
 #       with: {kind: python}            # or kind: collection
 #
 # every kind       actionlint over the caller's workflows (reads the caller's .github/actionlint.yaml).
@@ -39,6 +39,8 @@ permissions:
   contents: read
 
 env:
+  # A caller with no .python-version gets this; it must equal devkit's own .python-version.
+  PYTHON_FALLBACK: "3.12"
   ACTIONLINT_VERSION: 1.7.12
   ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 
@@ -117,9 +119,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ needs.collection-meta.outputs.path }}
+      # The CALLER's interpreter: its .python-version when it has one (the hub's ADR-35: one pin,
+      # read by every consumer), else PYTHON_FALLBACK — the version devkit itself is tested on
+      # (devkit's own .python-version; tests/test_template.py fails if the two ever differ).
+      - name: Which Python (the caller's .python-version, else devkit's)
+        id: py
+        working-directory: ${{ needs.collection-meta.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [ -f .python-version ]; then v=$(tr -d '[:space:]' < .python-version); src=".python-version"
+          else v="$PYTHON_FALLBACK"; src="devkit fallback"; fi
+          [[ "$v" =~ ^3\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::unusable Python version '$v' ($src)"; exit 1; }
+          echo "python $v ($src)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
+          python-version: ${{ steps.py.outputs.version }}
       - name: Install ansible-core ${{ matrix.ansible_core }}
         env:
           V: ${{ matrix.ansible_core }}

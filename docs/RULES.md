@@ -152,6 +152,29 @@ false-positives.
   (`docs.rule_sources`, via `--list-rules`) that the rulebook never mentions — a
   CI failure citing a rule nobody can look up is unactionable (`docs-drift`).
 
+### Dependencies (`dependencies`)
+
+Baseline-FAIL: devkit.toml `[dependencies] baseline` (default `deps-baseline.json`) records the
+violations a repository had when a rule arrived, each with a reason of three words or more. A new
+finding fails, an entry that no longer occurs fails (the baseline only shrinks), and an entry
+without a reason exits 2. The collection-side port of the hub's `make lint-deps`; DEP-01 (lock
+drift) and DEP-06 (declared twice) need a Python lock and stay hub-only.
+
+- **[FAIL DEP-02]** an install that bypasses a pinned declaration: `pip install <pkg>` (and
+  `python -m pip`, `uv pip`, `uv tool`, `uvx`, `pipx`) of a package, a URL/VCS/archive/path, an
+  index override, or an argument that cannot be resolved statically; a pip-module task installing
+  a name without an exact `==` pin. `-r` of a file listed in `[dependencies] requirement_files`
+  and `-e .` are allowed.
+- **[FAIL DEP-03]** a container image that is `:latest` or has neither a tag nor a digest
+  (compose, role files, workflows' `container`/`services`, Dockerfile/Containerfile `FROM`).
+- **[FAIL DEP-04]** a non-local `uses:` not pinned to a 40-hex commit SHA (a `docker://` action
+  needs a `@sha256:` digest; workflows are parsed, and one that does not parse is a finding). The
+  one exception is CONFORM-04's: a job-level call of ansible-devkit's own reusable workflows at a
+  release tag.
+- **[FAIL DEP-05]** a collection dependency declared without a range (`galaxy.yml`
+  `dependencies:` must be `>=X.Y.Z` or `>=X.Y.Z,<N.0.0`, never `*` or an exact pin), or a
+  collection a role or plugin uses that `galaxy.yml` (else `requirements.yml`) does not declare.
+
 ## Checks without a rule id
 
 These report a finding by description rather than an id; each exits 1 on any

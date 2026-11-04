@@ -15,7 +15,7 @@
 #   on: {push: {branches: [main]}}
 #   jobs:
 #     release:
-#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.3.2
+#       uses: Richard-Lynch/ansible-devkit/.github/workflows/reusable-release.yml@v0.4.0
 #       with: {kind: python}            # or kind: collection
 #       secrets: inherit                 # REQUIRED: without it the release environment's secrets arrive empty
 #
@@ -42,6 +42,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # A caller with no .python-version gets this; it must equal devkit's own .python-version.
+  PYTHON_FALLBACK: "3.12"
 
 jobs:
   # BUILD runs the repo's code (tests, checks, the build backend) and holds NO secret and no
@@ -100,10 +104,21 @@ jobs:
           uv run devkit check all
           uv build
 
+      # The caller's .python-version, else devkit's (the same rule as reusable-ci.yml).
+      - name: Which Python (the caller's .python-version, else devkit's)
+        id: py
+        if: steps.v.outputs.released == 'false' && inputs.kind == 'collection'
+        run: |
+          set -euo pipefail
+          if [ -f .python-version ]; then v=$(tr -d '[:space:]' < .python-version); src=".python-version"
+          else v="$PYTHON_FALLBACK"; src="devkit fallback"; fi
+          [[ "$v" =~ ^3\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::unusable Python version '$v' ($src)"; exit 1; }
+          echo "python $v ($src)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         if: steps.v.outputs.released == 'false' && inputs.kind == 'collection'
         with:
-          python-version: "3.12"
+          python-version: ${{ steps.py.outputs.version }}
 
       - name: Build — collection (verified by ci / gate on the PR that bumped the version)
         if: steps.v.outputs.released == 'false' && inputs.kind == 'collection'
