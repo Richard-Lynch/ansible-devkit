@@ -79,11 +79,19 @@ ansible_core:
     %}{% if v is not string %}quote each version ("2.21"): an unquoted 2.20 is the number 2.2{%
     endif %}{% endfor %}{% endif %}
 
+python_version:
+  type: str
+  help: The Python the shared CI and release run (written to .python-version, read by reusable-ci.yml)
+  default: "3.12"
+  validator: >-
+    {% set p = python_version.split('.') %}{% if p | length != 2 or p[0] != '3'
+    or not p[1].isdigit() %}a 3.N minor such as 3.12{% endif %}
+
 devkit_ref:
   type: str
   help: The ansible-devkit release tag the three workflows call (vMAJOR.MINOR.PATCH)
-  default: "v0.3.2"
+  default: "v0.4.0"
   validator: >-
     {% set p = devkit_ref[1:].split('.') %}{% if not devkit_ref.startswith('v') or p | length != 3
     or not (p[0].isdigit() and p[1].isdigit() and p[2].isdigit()) %}a release tag such as
-    v0.3.2, never a branch{% endif %}
+    v0.4.0, never a branch{% endif %}

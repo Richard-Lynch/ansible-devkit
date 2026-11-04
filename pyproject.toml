@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [project]
 name = "ansible-devkit"
-version = "0.3.2"
+version = "0.4.0"
 description = "Generic tooling for Ansible role repositories: an argspec generator, static checks against silent guards, and a disclosure gate for publishing from a private repository"
 readme = "README.md"
 license = "GPL-3.0-or-later"

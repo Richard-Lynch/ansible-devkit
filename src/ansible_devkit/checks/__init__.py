@@ -96,6 +96,12 @@ CHECKS: tuple[Check, ...] = (
         "every rule a checker enforces is documented in the rulebook (DOCRULE-01)",
     ),
     Check(
+        "dependencies",
+        "check_dependencies.py",
+        "dependencies pinned the standard's way: no ad-hoc installs, images and actions pinned, "
+        "collection dependencies declared as ranges (DEP-02..05, baseline-FAIL)",
+    ),
+    Check(
         "boundary-lint",
         "boundary_lint.py",
         "estate facts (the configured patterns) hard-coded in engine paths",

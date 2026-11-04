@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "ansible-devkit's shared Renovate policy for every repository built on it: one PR per ecosystem, patch and digest bumps automerged once the required checks (ci / gate, disclose / gate) are green, everything else reviewed. Extend it as github>Richard-Lynch/ansible-devkit//renovate/default and add only repo-specific rules.",
+  "extends": ["config:recommended", ":dependencyDashboard", ":disableRateLimiting"],
+  "timezone": "Europe/London",
+  "schedule": ["* 0-6 * * 1"],
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "configMigration": true,
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-6 1 * *"],
+    "automerge": false
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "galaxy.yml `dependencies:` (a mapping of collection: range). The ansible-galaxy manager reads requirements.yml lists; this reads the mapping a collection publishes.",
+      "managerFilePatterns": ["/(^|/)galaxy\\.ya?ml$/"],
+      "matchStrings": ["\\n\\s+[\"']?(?<depName>[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*)[\"']?:\\s*[\"'](?<currentValue>[^\"'\\n]+)[\"']"],
+      "datasourceTemplate": "galaxy-collection",
+      "versioningTemplate": "pep440"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "GitHub Actions: one grouped PR, every third-party action pinned to a commit digest with its tag in a comment (DEP-04).",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions",
+      "pinDigests": true
+    },
+    {
+      "description": "devkit's own reusable workflows stay on release TAGS (devkit conform CONFORM-04; the tag rulesets make them immutable), grouped on their own so a devkit release is one PR.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["Richard-Lynch/ansible-devkit"],
+      "groupName": "ansible-devkit",
+      "groupSlug": "ansible-devkit",
+      "pinDigests": false
+    },
+    {
+      "description": "Collection dependencies are RANGES in a library (DEP-05): widen the range, never pin it.",
+      "matchDatasources": ["galaxy-collection"],
+      "groupName": "Galaxy collections",
+      "groupSlug": "galaxy",
+      "rangeStrategy": "widen"
+    },
+    {
+      "description": "Python (uv.lock, pyproject.toml): one grouped PR.",
+      "matchManagers": ["pep621"],
+      "groupName": "Python dependencies",
+      "groupSlug": "python"
+    },
+    {
+      "description": "Patch and digest updates merge themselves once the required checks pass; minor and major wait for a human.",
+      "matchUpdateTypes": ["patch", "digest", "pin", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "A major bump is opened only from the dependency dashboard.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

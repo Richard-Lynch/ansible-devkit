@@ -14,11 +14,14 @@ CHANGELOG.md
 LICENSE
 README.md
 copier.yml
+deps-baseline.json
 devkit.toml
 devkit.toml.example
 docs/RULES.md
 export.manifest
 pyproject.toml
+renovate.json
+renovate/default.json
 src/ansible_devkit/__init__.py
 src/ansible_devkit/argspec/__init__.py
 src/ansible_devkit/argspec/cli.py
@@ -29,6 +32,7 @@ src/ansible_devkit/checks/boundary_lint.py
 src/ansible_devkit/checks/check_agent_tree_writes.py
 src/ansible_devkit/checks/check_ci_covers_hook_tests.py
 src/ansible_devkit/checks/check_defaults_resolved.py
+src/ansible_devkit/checks/check_dependencies.py
 src/ansible_devkit/checks/check_docs_drift.py
 src/ansible_devkit/checks/check_ha_restart_validated.py
 src/ansible_devkit/checks/check_molecule_verify.py
@@ -52,6 +56,7 @@ template/.github/workflows/ci.yml.jinja
 template/.github/workflows/disclose.yml.jinja
 template/.github/workflows/release.yml.jinja
 template/.gitignore.jinja
+template/.python-version.jinja
 template/CHANGELOG.md.jinja
 template/LICENSE
 template/README.md.jinja
@@ -59,12 +64,14 @@ template/devkit.toml.jinja
 template/export.manifest
 template/galaxy.yml.jinja
 template/meta/runtime.yml.jinja
+template/renovate.json
 tests/suites/_paths.py
 tests/suites/fixture_repo/devkit.toml
 tests/suites/test_affected_scenarios.py
 tests/suites/test_check_agent_tree_writes.py
 tests/suites/test_check_ci_covers_hook_tests.py
 tests/suites/test_check_defaults_resolved.py
+tests/suites/test_check_dependencies.py
 tests/suites/test_check_docs_drift.py
 tests/suites/test_check_ha_restart_validated.py
 tests/suites/test_check_molecule_verify.py

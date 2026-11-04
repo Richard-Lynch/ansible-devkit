@@ -103,3 +103,23 @@ def test_default_devkit_ref_is_this_release() -> None:
 def test_invalid_answers_are_refused(tmp_path: Path, answer: dict) -> None:
     with pytest.raises(ValueError, match="Validation error for question"):
         generate(tmp_path, **answer)
+
+
+def test_python_defaults_are_this_repositorys() -> None:
+    """The template's default .python-version and the reusable workflows' fallback for a caller
+    without one are both devkit's own .python-version, so they cannot drift apart."""
+    want = (ROOT / ".python-version").read_text().strip()
+    questions = yaml.safe_load((ROOT / "copier.yml").read_text())
+    assert questions["python_version"]["default"] == want
+    for wf in ("reusable-ci.yml", "reusable-release.yml"):
+        doc = yaml.safe_load((ROOT / ".github/workflows" / wf).read_text())
+        assert doc["env"]["PYTHON_FALLBACK"] == want, wf
+
+
+def test_generated_repository_has_python_version_and_renovate(tmp_path: Path) -> None:
+    out = generate(tmp_path, python_version="3.13")
+    assert (out / ".python-version").read_text().strip() == "3.13"
+    import json
+
+    cfg = json.loads((out / "renovate.json").read_text())
+    assert cfg["extends"] == ["local>Richard-Lynch/ansible-devkit//renovate/default"]

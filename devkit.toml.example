@@ -110,3 +110,10 @@ patterns = [
   { regex = '\bexample\.invalid\b', label = "estate domain" },
   { regex = '\b(?:node-a|node-b)\b', label = "real node hostname" },
 ]
+
+[dependencies]
+# devkit check dependencies (DEP-02..05). requirement_files: the pinned requirements files a
+# `pip install -r` may name (DEP-02); empty = none. baseline: violations tolerated, each with a
+# reason (default deps-baseline.json; absent = none tolerated).
+requirement_files = []
+baseline = "deps-baseline.json"

@@ -4,6 +4,34 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.4.0] — 2026-11-04
+
+### Added
+
+- **`devkit check dependencies`** (gate, so every repository's `devkit check all` runs it):
+  DEP-02 no ad-hoc `pip`/`uv`/`uvx`/`pipx` install (and no unpinned pip-module install), DEP-03
+  no `:latest` or untagged image, DEP-04 every non-local `uses:` pinned to a commit SHA (a
+  `docker://` action by digest; devkit's own reusable workflows by release tag, as CONFORM-04
+  requires), DEP-05 every collection a role or plugin uses declared in `galaxy.yml` as a range.
+  Baseline-FAIL: `deps-baseline.json` records what a repository already had, each entry with a
+  reason; a new finding, a stale entry or an entry without a reason fails. The collection-side
+  port of the hub's `make lint-deps` (DEP-01 and DEP-06 need a Python lock and stay there).
+- **Renovate**: `renovate/default.json`, the shared policy every repository extends
+  (`local>Richard-Lynch/ansible-devkit//renovate/default`): GitHub Actions pinned to digests in one
+  PR, devkit's reusable-workflow tags in another, `galaxy.yml` collection ranges widened (never
+  pinned), uv.lock in one Python PR plus monthly lock maintenance, patch/digest bumps automerged
+  once `ci / gate` and `disclose / gate` pass, majors only from the dependency dashboard. The
+  template ships a `renovate.json` that extends it.
+- The template writes `.python-version` (question `python_version`, default devkit's own).
+
+### Changed
+
+- **The shared CI and release use the CALLER's Python**: `reusable-ci.yml` (kind=collection) and
+  `reusable-release.yml` read the caller's `.python-version` instead of a hardcoded "3.12". A
+  caller without one gets `PYTHON_FALLBACK`, which is devkit's own `.python-version` (a test fails
+  if they differ): a missing file must not fail every collection that predates it, and the
+  version devkit is tested on is the one known to work.
+
 ## [0.3.2] — 2026-11-04
 
 ### Changed

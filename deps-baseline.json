@@ -1,0 +1,13 @@
+{
+  "_comment": "devkit check dependencies baseline: violations that existed when DEP-02..05 arrived. key = RULE|path|name, value = occurrences, and a reason for each. New ones FAIL; an entry that no longer occurs FAILS until removed. Regenerate with `devkit check dependencies --update-baseline` after a fix, never to admit a new one.",
+  "entries": {
+    "DEP-02|.github/workflows/reusable-ci.yml|ansible-core==${V}.*": 1,
+    "DEP-02|.github/workflows/reusable-ci.yml|git+https://github.com/Richard-Lynch/ansible-devkit@${DEVKIT_SHA}": 1,
+    "DEP-02|.github/workflows/reusable-release.yml|ansible-core==${CORE}.*": 1
+  },
+  "reasons": {
+    "DEP-02|.github/workflows/reusable-ci.yml|ansible-core==${V}.*": "the ansible-core test matrix installs each supported minor's latest patch by design; the matrix input is validated against ^X.Y$ first",
+    "DEP-02|.github/workflows/reusable-ci.yml|git+https://github.com/Richard-Lynch/ansible-devkit@${DEVKIT_SHA}": "devkit at this reusable workflow's own exact commit (job.workflow_sha, checked against 40 hex), so the checks and the workflow cannot disagree",
+    "DEP-02|.github/workflows/reusable-release.yml|ansible-core==${CORE}.*": "the release builds with the latest patch of the declared ansible-core minor, validated against ^X.Y$ first"
+  }
+}

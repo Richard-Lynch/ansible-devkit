@@ -6,6 +6,7 @@
 .github/workflows/disclose.yml
 .github/workflows/release.yml
 .gitignore
+.python-version
 CHANGELOG.md
 LICENSE
 README.md
@@ -13,3 +14,4 @@ devkit.toml
 export.manifest
 galaxy.yml
 meta/runtime.yml
+renovate.json
