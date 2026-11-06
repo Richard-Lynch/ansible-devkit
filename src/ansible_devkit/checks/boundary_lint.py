@@ -96,6 +96,9 @@ def main() -> int:
     ap.add_argument("--warn", action="store_true", help="report only, always exit 0 (default)")
     ap.add_argument("paths", nargs="*", default=list(ENGINE_ROOTS))
     args = ap.parse_args()
+    # `devkit check boundary-lint` passes --enforce from the registry; an explicit --warn from the
+    # caller wins, so a repository still working off a backlog can run it as a report.
+    enforce = args.enforce and not args.warn
 
     roots = [Path(p) for p in (args.paths or ENGINE_ROOTS)]
     violations = 0
@@ -108,13 +111,13 @@ def main() -> int:
             for ln, label, match in hits:
                 print(f"{f}:{ln}: estate fact in ENGINE path — {label}: {match}")
 
-    mode = "ENFORCE" if args.enforce else "WARN"
+    mode = "ENFORCE" if enforce else "WARN"
     print(
         f"\nboundary_lint [{mode}]: {violations} estate-fact leak(s) across "
         f"{len(by_file)} ENGINE file(s). See docs/RULES.md (boundary-lint).",
         file=sys.stderr,
     )
-    if args.enforce and violations:
+    if enforce and violations:
         return 1
     return 0
 

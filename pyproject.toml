@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [project]
 name = "ansible-devkit"
-version = "0.4.1"
+version = "0.5.0"
 description = "Generic tooling for Ansible role repositories: an argspec generator, static checks against silent guards, and a disclosure gate for publishing from a private repository"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -9,6 +9,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
+    "jinja2>=3.1",
     "pydantic>=2",
     "pyyaml>=6",
     "ruamel.yaml>=0.18",
@@ -31,6 +32,9 @@ argspec = "ansible_devkit.argspec.cli:main"
 
 [dependency-groups]
 dev = [
+    # diff-leak parses free-form `k=v` with ansible.parsing.splitter.parse_kv when ansible-core is
+    # importable (the consuming repositories all have it); the suite needs it to exercise that path.
+    "ansible-core>=2.19",
     "black>=25",
     "copier>=9.14",
     "pytest>=8",

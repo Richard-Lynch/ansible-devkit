@@ -152,6 +152,35 @@ false-positives.
   (`docs.rule_sources`, via `--list-rules`) that the rulebook never mentions — a
   CI failure citing a rule nobody can look up is unactionable (`docs-drift`).
 
+### Secrets in logs and CI trust
+
+- **[FAIL DIFFLEAK-01]** a `template`, `copy content:`, `lineinfile`, `blockinfile`,
+  `replace` or `ini_file` task — or a `deployment_config` sweep — whose rendered text references
+  a credential (a Jinja name containing password/secret/token/api_key/private_key/jwt, or a
+  secret-store lookup) and that carries no `no_log: true`: `--diff` prints the whole rendered
+  file into the run log (`diff-leak`). Every task form counts (`args:`, `action:`,
+  `local_action:`, free-form `k=v`), templates are followed through `include`/`import`/`from`/
+  `extends`, and a source or target that cannot be resolved is counted AND, without `no_log`, is
+  a finding (fail closed).
+  `diff: false` and a templated `no_log` are not accepted.
+  Suppress with `# guard-check: ignore DIFFLEAK-01 — <reason>`.
+- **[FAIL FORKGUARD-01]** in a `pull_request`-triggered workflow, a job whose `runs-on` is not a
+  literal hosted label and that carries neither the canonical fork guard as a top-level `if:`
+  conjunct nor a `runs-on` that picks a hosted label FIRST for a fork PR; under
+  `pull_request_target`, `pull_request_review`, `pull_request_review_comment`, `issue_comment`
+  and `workflow_run` no guard is accepted (`workflow-fork-guard`). A persistent self-hosted
+  runner must never run a stranger's code. "Hosted" is an allowlist of GitHub's own labels
+  (plus `workflow_fork_guard.hosted_labels`); any other label, a `group:` mapping or an
+  expression is possibly self-hosted.
+  A local reusable workflow (`uses: ./.github/workflows/x.yml`) is followed and its jobs judged
+  under the caller's triggers; a `workflow_call`-only workflow no scanned caller reaches is judged
+  as fork-reachable (fail closed).
+- **[FAIL FORKGUARD-02]** a fork-reachable job calling a REMOTE reusable workflow
+  (`owner/repo/.github/workflows/x.yml@ref`) whose ref is not a 40-hex commit SHA — the callee
+  cannot be inspected here, so the ref is pinned and the callee carries its own guard in its own
+  repository (`workflow-fork-guard`). Exception, as DEP-04's: ansible-devkit's own reusable
+  workflows at a release tag.
+
 ### Dependencies (`dependencies`)
 
 Baseline-FAIL: devkit.toml `[dependencies] baseline` (default `deps-baseline.json`) records the
@@ -199,7 +228,9 @@ finding.
 - **`boundary-lint`** — a configured estate fact (`boundary.patterns`: private
   addresses, real hostnames, a public IP) in an ENGINE path
   (`boundary.engine_roots`, minus the exempt data paths). A role that works on a
-  second machine with only inventory changes has none.
+  second machine with only inventory changes has none. `devkit check all` runs
+  it enforcing; `devkit check boundary-lint --warn` reports and exits 0, for a
+  repository still working off a backlog.
 
 ## The repository standard (`devkit conform`)
 

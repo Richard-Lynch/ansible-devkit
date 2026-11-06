@@ -104,8 +104,18 @@ CHECKS: tuple[Check, ...] = (
     Check(
         "boundary-lint",
         "boundary_lint.py",
-        "estate facts (the configured patterns) hard-coded in engine paths",
+        "estate facts (the configured patterns) hard-coded in engine paths (--warn to report only)",
         default_args=("--enforce",),
+    ),
+    Check(
+        "diff-leak",
+        "check_diff_leak.py",
+        "a task rendering a credential into a file without no_log (--diff prints it; DIFFLEAK-01)",
+    ),
+    Check(
+        "workflow-fork-guard",
+        "check_workflow_fork_guard.py",
+        "a job a fork PR can trigger that may select a self-hosted runner (FORKGUARD-01)",
     ),
     Check(
         "trap-report",
