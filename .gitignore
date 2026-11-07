@@ -13,3 +13,6 @@ var/
 .disclosure/
 # scratch worktrees (the regex-anchors suite writes a fixture here and removes it)
 .claude/worktrees/
+# ansible-galaxy dependencies
+collections.galaxy/
+roles.galaxy/

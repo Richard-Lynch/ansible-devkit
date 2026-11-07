@@ -32,6 +32,9 @@ package's template (copier.yml, template/) generates:
               accepts: `<rule-glob> <location-glob> <reason of three words or more>`, a location
               that is not `*`; the shared disclose workflow reads it from a pull request's base
 
+  CONFORM-15  Makefile has the five standard targets with single devkit recipes
+  CONFORM-16  opt-in dependency input files exist (ADR-59)
+
 One line per problem on stdout, `<path>: <RULE> <message>`. Exit 0 when the repository meets the
 standard, 1 when it does not, 2 when a rule could not be evaluated (no git repository, an
 unreadable file) — a rule that could not run is never reported as met.
@@ -538,9 +541,87 @@ def check_disclose_allow(root: Path) -> list[Problem]:
     return out
 
 
+def check_makefile(root: Path, config: dict) -> list[Problem]:
+    path = root / "Makefile"
+    if not path.is_file():
+        return [Problem("Makefile", "CONFORM-15", "missing")]
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return [Problem("Makefile", "CONFORM-15", f"unreadable: {exc}", unchecked=True)]
+    targets = {name: [] for name in ("help", "test", "lint", "deps-install", "deps-check")}
+    seen = set()
+    active = []
+    for line in lines:
+        if line.startswith("\t"):
+            for name in active:
+                targets[name].append(line.strip())
+        elif line.strip() and not line.lstrip().startswith("#"):
+            match = re.match(r"^([^:=]+):(?!=)(.*)$", line)
+            active = []
+            if match:
+                active = [name for name in match.group(1).split() if name in targets]
+                seen.update(active)
+                if ";" in match.group(2):
+                    for name in active:
+                        targets[name].append(match.group(2).split(";", 1)[1].strip())
+    policy = config.get("makefile_policy_targets", [])
+    if not isinstance(policy, list) or not all(isinstance(x, str) for x in policy):
+        return [
+            Problem(
+                "devkit.toml", "CONFORM-15", "makefile_policy_targets must be a list of strings"
+            )
+        ]
+    out = []
+    for name, recipe in targets.items():
+        if name not in seen:
+            out.append(Problem("Makefile", "CONFORM-15", f"missing target {name}"))
+        elif name not in policy and (
+            len(recipe) != 1 or not re.fullmatch(r"@?devkit(?:\s+[-\w./]+)+", recipe[0])
+        ):
+            out.append(
+                Problem(
+                    "Makefile", "CONFORM-15", f"target {name} must have a single devkit invocation"
+                )
+            )
+    return out
+
+
+def check_dependency_inputs(root: Path, config: dict) -> list[Problem]:
+    required = config.get("require_dependency_inputs", False)
+    if not isinstance(required, bool):
+        return [Problem("devkit.toml", "CONFORM-16", "require_dependency_inputs must be a boolean")]
+    return [
+        Problem(name, "CONFORM-16", "missing")
+        for name in ("bindep.txt", "pyproject.toml", "uv.lock", "requirements.yml")
+        if required and not (root / name).is_file()
+    ]
+
+
+def conform_config(root: Path) -> tuple[dict, list[Problem]]:
+    path = root / "devkit.toml"
+    if not path.exists():
+        return {}, []
+    try:
+        config = tomllib.loads(path.read_text(encoding="utf-8")).get("conform", {})
+        if not isinstance(config, dict):
+            raise ValueError("conform must be a table")
+        return config, []
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError, ValueError) as exc:
+        return {}, [
+            Problem(
+                "devkit.toml", "CONFORM-15", f"cannot read configuration: {exc}", unchecked=True
+            )
+        ]
+
+
 def conform(root: Path) -> list[Problem]:
     tracked = tracked_files(root)
+    config, config_problems = conform_config(root)
     return [
+        *config_problems,
+        *check_makefile(root, config),
+        *check_dependency_inputs(root, config),
         *check_callers(root),
         *check_license(root),
         *check_changelog(root),

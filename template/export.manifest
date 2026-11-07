@@ -15,3 +15,8 @@ export.manifest
 galaxy.yml
 meta/runtime.yml
 renovate.json
+Makefile
+bindep.txt
+requirements.yml
+pyproject.toml
+uv.lock
