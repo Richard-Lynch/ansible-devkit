@@ -49,24 +49,52 @@ TAGGED = re.compile(r"\[(?:FAIL|warn) ([A-Z]+-[0-9]+)\]")
 BACKTICKED = re.compile(r"`([A-Z]+-[0-9]+)`")
 
 
+DEVKIT_SOURCE = "devkit:"
+
+
+def _rule_source_command(rel: str) -> list[str]:
+    """The `--list-rules` command for one `docs.rule_sources` entry.
+
+    Two forms. A repo path (`scripts/hooks/check_x.py`) runs that script. `devkit:<check>` names a
+    check THIS package provides and runs `devkit check <name> --list-rules` through the same
+    interpreter, so a consuming repository that deleted its own copies of the generic checks can
+    still have DOCRULE-01 compare its rulebook against the rules it actually enforces. An unknown
+    check name makes devkit exit non-zero, which the caller turns into a ConfigError — never an
+    empty, vacuously-satisfied set.
+    """
+    if rel.startswith(DEVKIT_SOURCE):
+        name = rel[len(DEVKIT_SOURCE) :]
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+            raise _devkit_config.ConfigError(
+                f"docs.rule_sources entry '{rel}': a devkit check name is lowercase words and hyphens"
+            )
+        return [sys.executable, "-m", "ansible_devkit.cli", "check", name, "--list-rules"]
+    exe = REPO / rel
+    if not exe.is_file():
+        raise _devkit_config.ConfigError(
+            f"docs.rule_sources names '{rel}', which does not exist under {REPO}"
+        )
+    return [sys.executable, str(exe), "--list-rules"]
+
+
 def _enforced_rule_ids() -> set[str]:
     """Every rule ID the configured checkers can actually emit, from their own --list-rules."""
     ids: set[str] = set()
     # REQUIRED, and each source must exist: an empty or stale list would make DOCRULE-01 vacuously
     # true, which is a silent guard in the checker that exists to catch them.
     for rel in _CFG.str_list("docs.rule_sources"):
-        exe = REPO / rel
-        if not exe.is_file():
-            raise _devkit_config.ConfigError(
-                f"docs.rule_sources names '{rel}', which does not exist under {REPO}"
+        try:
+            cp = subprocess.run(
+                _rule_source_command(rel),
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-        cp = subprocess.run(
-            [sys.executable, str(exe), "--list-rules"],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        except (OSError, subprocess.SubprocessError) as exc:
+            # A source that cannot even START (interpreter missing, timeout) must not contribute
+            # an empty set: DOCRULE-01 would then pass on every rule it would have listed.
+            raise _devkit_config.ConfigError(f"`{rel} --list-rules` could not run: {exc}") from exc
         if cp.returncode != 0:
             # A source that cannot list its rules (its own config error, say) contributes none,
             # and DOCRULE-01 would then pass vacuously for every rule it enforces.

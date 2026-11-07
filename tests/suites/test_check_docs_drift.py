@@ -12,6 +12,7 @@ Run: uv run tests/suites/test_check_docs_drift.py   (from the repo root)
 
 from __future__ import annotations
 
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -23,7 +24,9 @@ _paths.use_fixture_config()
 
 sys.path.insert(0, str(CHECKS))
 
-from check_docs_drift import _enforced_rule_ids, check  # noqa: E402
+import _devkit_config  # noqa: E402
+import check_docs_drift as cdd  # noqa: E402
+from check_docs_drift import _enforced_rule_ids, _rule_source_command, check  # noqa: E402
 
 FAILURES: list[str] = []
 CASES = 0
@@ -84,6 +87,38 @@ def main() -> int:
             check(missing, check_rule_coverage=True) and "cannot read" in check(missing)[0],
             "an unreadable document is a finding, never a pass",
         )
+
+    # `devkit:<check>` sources: a repository with no copy of the checks names them by check name.
+    import subprocess
+
+    cmd = _rule_source_command("devkit:silent-guards")
+    record(
+        cmd[1:5] == ["-m", "ansible_devkit.cli", "check", "silent-guards"]
+        and cmd[-1] == "--list-rules",
+        "devkit: source becomes `devkit check <name> --list-rules`",
+        str(cmd),
+    )
+    cp = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=120)
+    ids = set(re.findall(r"^([A-Z]+-[0-9]+)", cp.stdout, re.M))
+    record(
+        cp.returncode == 0 and {"META-01", "YAMLESC-01"} <= ids,
+        f"the devkit: source lists the check's rules ({len(ids)} IDs)",
+        cp.stdout[-500:] + cp.stderr[-500:],
+    )
+    try:
+        _rule_source_command("devkit:Not A Check")
+        record(False, "catch   a malformed devkit: name is refused")
+    except _devkit_config.ConfigError:
+        record(True, "catch   a malformed devkit: name is refused")
+    real_cmd = cdd._rule_source_command
+    cdd._rule_source_command = lambda rel: ["/nonexistent/python", "--list-rules"]
+    try:
+        cdd._enforced_rule_ids()
+        record(False, "catch   a rule source that cannot run is a config error, not an empty set")
+    except _devkit_config.ConfigError:
+        record(True, "catch   a rule source that cannot run is a config error, not an empty set")
+    finally:
+        cdd._rule_source_command = real_cmd
 
     # The real document: this package's own rulebook must document every rule its checkers emit.
     real = ROOT / "docs" / "RULES.md"

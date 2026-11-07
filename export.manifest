@@ -33,6 +33,7 @@ src/ansible_devkit/checks/check_agent_tree_writes.py
 src/ansible_devkit/checks/check_ci_covers_hook_tests.py
 src/ansible_devkit/checks/check_defaults_resolved.py
 src/ansible_devkit/checks/check_dependencies.py
+src/ansible_devkit/checks/check_diff_leak.py
 src/ansible_devkit/checks/check_docs_drift.py
 src/ansible_devkit/checks/check_ha_restart_validated.py
 src/ansible_devkit/checks/check_molecule_verify.py
@@ -42,6 +43,7 @@ src/ansible_devkit/checks/check_rootfs_seal.py
 src/ansible_devkit/checks/check_silent_guards.py
 src/ansible_devkit/checks/check_traps_are_checked.py
 src/ansible_devkit/checks/check_vendored_secrets.py
+src/ansible_devkit/checks/check_workflow_fork_guard.py
 src/ansible_devkit/checks/record_trap_hits.py
 src/ansible_devkit/checks/trap_report.py
 src/ansible_devkit/cli.py
@@ -68,10 +70,12 @@ template/renovate.json.jinja
 tests/suites/_paths.py
 tests/suites/fixture_repo/devkit.toml
 tests/suites/test_affected_scenarios.py
+tests/suites/test_boundary_lint.py
 tests/suites/test_check_agent_tree_writes.py
 tests/suites/test_check_ci_covers_hook_tests.py
 tests/suites/test_check_defaults_resolved.py
 tests/suites/test_check_dependencies.py
+tests/suites/test_check_diff_leak.py
 tests/suites/test_check_docs_drift.py
 tests/suites/test_check_ha_restart_validated.py
 tests/suites/test_check_molecule_verify.py
@@ -81,6 +85,7 @@ tests/suites/test_check_rootfs_seal.py
 tests/suites/test_check_silent_guards.py
 tests/suites/test_check_traps_are_checked.py
 tests/suites/test_check_vendored_secrets.py
+tests/suites/test_check_workflow_fork_guard.py
 tests/suites/test_disclose.py
 tests/suites/test_models.py
 tests/suites/test_portable_checks.py

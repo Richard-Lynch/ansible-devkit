@@ -16,6 +16,8 @@ rule_sources = [
   "../../../src/ansible_devkit/checks/check_silent_guards.py",
   "../../../src/ansible_devkit/checks/check_agent_tree_writes.py",
   "../../../src/ansible_devkit/checks/check_molecule_verify.py",
+  "../../../src/ansible_devkit/checks/check_diff_leak.py",
+  "../../../src/ansible_devkit/checks/check_workflow_fork_guard.py",
 ]
 trap_section = "## Known traps in this codebase"
 

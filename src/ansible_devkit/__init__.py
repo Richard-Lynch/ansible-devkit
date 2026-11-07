@@ -5,4 +5,4 @@ Nothing in this package may name an estate: no host, address, vault or path of t
 was developed in. Per-repository data belongs to the consuming repo's `devkit.toml`, not here.
 """
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"

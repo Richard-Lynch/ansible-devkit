@@ -37,10 +37,10 @@ Releases are git tags; there is no PyPI package. Pin a tag:
 
 ```sh
 # as a tool (puts `devkit` and `argspec` on PATH)
-uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.4.1
+uv tool install git+https://github.com/Richard-Lynch/ansible-devkit@v0.5.0
 
 # or as a dev dependency of your Ansible repository
-uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.4.1"
+uv add --dev "ansible-devkit @ git+https://github.com/Richard-Lynch/ansible-devkit@v0.5.0"
 ```
 
 Python 3.12 or newer. `devkit disclose` also needs `gitleaks` and `trufflehog`
@@ -100,8 +100,8 @@ A new collection repository that already conforms comes from the copier
 template (`copier.yml` at this repository's root, files under `template/`):
 
 ```sh
-uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.4.1"
-copier copy --vcs-ref v0.4.1 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
+uv tool install copier         # or: uv add --dev "ansible-devkit[template] @ git+...@v0.5.0"
+copier copy --vcs-ref v0.5.0 gh:Richard-Lynch/ansible-devkit ansible-collection-demo
 cd ansible-collection-demo && git init -q && git add -A && devkit conform
 ```
 

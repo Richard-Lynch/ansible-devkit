@@ -4,6 +4,111 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.5.0] — 2026-11-05
+
+### Added
+
+- **`devkit check diff-leak`** (gate): DIFFLEAK-01, a task that renders a credential into a file
+  (`template`, `copy content:`, the lineinfile family, `ini_file`, a `deployment_config` sweep)
+  without `no_log: true`, so `--diff` prints the secret into the run log. The template source is
+  resolved the way Ansible resolves it; a source that cannot be resolved is counted, never passed.
+- **`devkit check workflow-fork-guard`** (gate): FORKGUARD-01, a `pull_request`-triggered job that
+  can select a self-hosted runner with no canonical fork guard (an `if:` conjunct, or a `runs-on`
+  that picks a hosted label first for a fork PR); nothing is accepted under `pull_request_target`.
+  Reusable workflows are judged too (a MEDIUM fail-open finding in the hub's copy, 2026-11-06): a
+  local `uses: ./.github/workflows/x.yml` is followed and the callee's jobs judged under the
+  caller's triggers, recursively with a cycle guard; a `workflow_call`-only workflow no scanned
+  caller reaches is judged as fork-reachable; a remote reusable call must be pinned to a commit
+  SHA (FORKGUARD-02), except ansible-devkit's own reusable workflows at a release tag.
+  Three further security-review rounds are folded in with a FAIL fixture and a near-miss each: the
+  fork guard must be the whole `if:` or a conjunct of its ONLY top-level disjunct (`guard && x ||
+  true` is rejected); the hosted-first `runs-on` form is matched in full (`... || vars.NAME ||
+  '"hosted"') }}`, nothing after it); a local callee is resolved relative to the caller's own
+  directory and an unreached `workflow_call` workflow is judged in the `pull_request_target`
+  context (hosted literal only). In `diff-leak`: a vault/hash filter exempts only the value it is
+  applied to at the top level of the expression and only up to its balanced closing paren
+  (`secret ~ (x | vault(pw))` and `x | vault(pw) ~ secret` are both findings); a suppression
+  comment covers the task's own lines or the comment directly above it, never the next sibling;
+  free-form `k=v` is split with Ansible's own `parse_kv`, and a task whose args cannot be parsed is
+  counted as unresolved, never passed. A fourth round (1 HIGH): the fork-reachable trigger set is
+  `pull_request`, `pull_request_target`, `pull_request_review`, `pull_request_review_comment`,
+  `issue_comment` and `workflow_run`, and every one but plain `pull_request` accepts a hosted
+  literal only; `diff-leak` merges a task-level `args:` mapping, reads the `action:` /
+  `local_action:` forms (string and mapping), records a task whose args cannot be determined as
+  unresolved, and follows `{% include %}`, `{% import %}`, `{% from %}` and `{% extends %}` into
+  the role's templates recursively (cycle-guarded), counting a non-literal or missing target as
+  unresolved.
+  Fifth round (2 MEDIUM) and the structural fix: `diff-leak` no longer scans Jinja with regexes.
+  Every expression, `{% set %}`, `{% for %}` and include target is read from jinja2's own AST
+  (jinja2 is now a dependency): a credential is protected only when its node sits under a
+  vault/hash `Filter` node, so operator precedence is Jinja's (`secret ~ x | vault(pw)` vaults
+  only `x`); a text that does not parse is UNRESOLVED (a file) or tainted (a variable), never a
+  pass. The rendering-argument table carries every alias from the modules' own argument specs
+  (`lineinfile value`, `blockinfile content`, `ini_file values`) and the suite asserts it against
+  the installed ansible-core through `ansible-doc --json`.
+  Sixth round (3 MEDIUM): a hosted `runs-on` is an ALLOWLIST of GitHub's documented labels
+  (extended per repository in devkit.toml `[workflow_fork_guard] hosted_labels`), never a prefix
+  pattern (`ubuntu-lab` is self-hosted); any file offering `workflow_call` that no scanned caller
+  reaches is judged in the strictest context whatever its other triggers; `diff-leak` follows
+  `lookup('template', <literal>)` the way it follows `template: src:` and counts a non-literal
+  target, or any `lookup('file', ...)` (unrendered content), as unresolved.
+  Own adversarial pass: `lookup('vars'|'env', '<secret-named>')` renders the named value and is a
+  finding; `pipe`, `url`, `csvfile`, `ini`, `lines` and `first_found` lookups are content this
+  check cannot see (unresolved); `ansible.windows` `win_template`/`win_copy`/`win_lineinfile`
+  render like their POSIX twins and are scanned.
+  Seventh round (1 HIGH): the hosted-first `runs-on` form's two labels are captured and each
+  checked against the hosted allowlist (no prefix pattern remains in the module); an `if:` with a
+  `${{ }}` block anywhere but as one wrapper around the whole expression is unguarded (GitHub
+  concatenates the blocks' text). `diff-leak`: `With`, `Macro` defaults, `CallBlock`,
+  `FilterBlock` (a vault filter block protects its body) and `ExprStmt` are handled and every
+  other expression child is judged as emitted; a task whose rendered content is UNRESOLVED and
+  that carries no `no_log` is a FINDING (fail closed), with the credential heuristics also run on
+  the arguments of `file`/`pipe`-style lookups; module and lookup names are matched on their
+  SHORT name (`ansible.legacy.template`, a collection's own `template`), and a third-party
+  file/template-reading lookup is unresolved.
+  Eighth round: every early exit in both checks judges or records — a `with_fileglob` pattern
+  that is not static or matches nothing, an `include_role`/`import_role` whose free-form args
+  cannot be parsed, a render argument whose Jinja does not parse and a task entry that is not a
+  mapping are all UNRESOLVED (a finding without `no_log`; the sweep's cover is `apply.no_log` for
+  an include_role); in `workflow-fork-guard` a `jobs:` that is not a mapping, a job that is not a
+  mapping and a job with neither `runs-on` nor `uses` are findings, never skips.
+  Ninth round: a `{% set %}` block whose body holds any lookup or an include this check could
+  not follow taints its variable; an attribute, literal subscript, `.get()`/`.pop()` argument or
+  `json_query`/`extract` path named like a credential is a reference even when the base is an
+  expression (`(lookup(...)).password`); a task file that does not parse as YAML, or whose top
+  level is not a list, is UNRESOLVED and a finding — for task and play files; a mapping beside a
+  play and any file under files/ or vars/ is data, which Ansible would refuse as tasks anyway.
+  Tenth round: a template with a `#jinja2:` delimiter header, or a `template` task setting the
+  `*_start_string`/`*_end_string` options, is UNRESOLVED (a default-delimiter parse is wrong by
+  construction); variable data is any YAML under `vars/`, `defaults/`, `group_vars/` or
+  `host_vars/` at any depth; the not-a-secret suffixes (`_file`, `_ttl`, ...) apply only to
+  detection BY NAME — a name DEFINED from a credential is tainted whatever it is called.
+
+### Threat model and stopping rule for `diff-leak` and `workflow-fork-guard`
+
+These two checks guard against the repository's OWN accidental leaks and misconfigurations: a
+maintainer who forgets `no_log` on a task that renders a secret, or who lets a repository variable
+route a fork PR onto a persistent runner. They are static heuristics over YAML and Jinja, and they
+fail CLOSED: anything they cannot resolve is a finding unless the task carries `no_log` or a
+suppression with a reason. They are **not** a boundary against an adversarial author: someone who
+controls the repository's code can always construct a shape a static check does not model, and the
+answer to that threat is review and the runner/credential boundary, not more regexes. After ten
+security-review rounds on 0.5.0 (each with a FAIL fixture and a near-miss), a further finding on
+these two checks is tracked as an issue rather than blocking a release, unless it is HIGH or shows
+a real leak path in a repository's ACTUAL code.
+- **`docs-drift` reads `devkit:<check>` rule sources**: `docs.rule_sources` may name a check this
+  package provides, and DOCRULE-01 lists its rules through `devkit check <name> --list-rules`, so a
+  repository that keeps no copy of the generic checks still compares its rulebook against what it
+  enforces. A source that cannot run is a config error (exit 2), never an empty set.
+
+### Changed
+
+- **`boundary-lint` honours `--warn`** when the registry's `--enforce` is also present, so
+  `devkit check boundary-lint --warn` is a report (exit 0) and `devkit check all` still enforces.
+
+Both checks and their suites come from the IaaC hub (M6 batch 2), where they had gated every PR
+since 2026-11-03 / 2026-11-04; the suites are unchanged apart from their locators.
+
 ## [0.4.1] — 2026-11-05
 
 ### Changed (security review of the Renovate policy)

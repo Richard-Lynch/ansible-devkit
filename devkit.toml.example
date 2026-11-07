@@ -99,6 +99,12 @@ log_dir = "logs/trap-hits"
 # The variable that redirects both (a test suite points it at a temp dir).
 log_dir_env = "DEVKIT_TRAP_LOG_DIR"
 
+[workflow_fork_guard]
+# FORKGUARD-01 accepts a runs-on only when every label is a GitHub-hosted one. The built-in
+# allowlist is GitHub's documented standard and larger-runner labels; a repository with its own
+# larger-runner labels lists them here. Anything else is treated as possibly self-hosted.
+hosted_labels = []
+
 [boundary]
 # boundary-lint: REQUIRED. Estate facts that must not appear in ENGINE paths (roles/, playbooks/
 # logic). Use RFC 5737 / RFC 2606 examples in docs; the real values go here, privately.
