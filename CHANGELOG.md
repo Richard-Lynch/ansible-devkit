@@ -4,6 +4,16 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.5.1] — 2026-11-07
+
+### Fixed
+
+- **`reusable-ci.yml` (kind=collection) installs the collection's `galaxy.yml` `dependencies:`**
+  beside the checkout before `ansible-test sanity` and `units`. A collection that imports another
+  (`ansible_collections.<ns>.<dep>.plugins.module_utils...`, or a doc fragment from it) failed every
+  import test and `ansible-doc` for the one reason it declares in galaxy.yml; the first module
+  built on `richard_lynch.common` (`richard_lynch.monitoring` 1.1.0) found it.
+
 ## [0.5.0] — 2026-11-05
 
 ### Added

@@ -142,6 +142,34 @@ jobs:
           set -euo pipefail
           [[ "$V" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::bad ansible-core version '$V'"; exit 1; }
           python -m pip install --disable-pip-version-check "ansible-core==${V}.*"
+      # A collection that imports another (`ansible_collections.<ns>.<dep>.plugins.module_utils...`,
+      # a doc fragment from it) needs that dependency PRESENT in the collections root ansible-test
+      # mounts, or every import test and `ansible-doc` fails for the one reason the collection
+      # declares in galaxy.yml. Install exactly what galaxy.yml `dependencies:` declares, at the
+      # declared range, beside the checkout (the same ansible_collections/ tree), before sanity.
+      - name: Install the collection's galaxy dependencies beside it
+        working-directory: ${{ needs.collection-meta.outputs.path }}
+        env:
+          ROOT: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - "$ROOT" <<'PY'
+          import re, subprocess, sys
+          root = sys.argv[1]
+          text = open("galaxy.yml", encoding="utf-8").read()
+          block = re.search(r"^dependencies:\s*\n((?:[ \t]+.*\n)*)", text, re.M)
+          deps = []
+          if block:
+              for line in block.group(1).splitlines():
+                  m = re.match(r"^\s+['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?\s*:\s*['\"]?([^'\"#]+?)['\"]?\s*(#.*)?$", line)
+                  if m:
+                      deps.append(f"{m.group(1)}:{m.group(2).strip()}")
+          if not deps:
+              print("galaxy.yml declares no dependencies")
+              sys.exit(0)
+          print("installing", deps)
+          subprocess.run(["ansible-galaxy", "collection", "install", "-p", root, *deps], check=True)
+          PY
       - name: ansible-test sanity (ansible-core ${{ matrix.ansible_core }})
         working-directory: ${{ needs.collection-meta.outputs.path }}
         run: ansible-test sanity --docker -v --color
