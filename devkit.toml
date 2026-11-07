@@ -24,6 +24,7 @@ ansible_roots = ["roles", "playbooks"]
 # emit to appear in it, and TRAPTAG-01 requires every bullet in its trap section to be tagged.
 rulebook = "docs/RULES.md"
 rule_sources = [
+  "src/ansible_devkit/checks/check_inventory_strict.py",
   "src/ansible_devkit/checks/check_silent_guards.py",
   "src/ansible_devkit/checks/check_agent_tree_writes.py",
   "src/ansible_devkit/checks/check_molecule_verify.py",

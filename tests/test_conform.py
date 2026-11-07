@@ -111,6 +111,11 @@ def repo(tmp_path: Path) -> Path:
     write(tmp_path, ".github/workflows/release.yml", RELEASE)
     write(tmp_path, ".github/actionlint.yaml", "# no ignores\n")
     write(tmp_path, ".disclose-allow", DISCLOSE_ALLOW)
+    write(
+        tmp_path,
+        "Makefile",
+        "help:\n\t@devkit --help\n\ntest:\n\t@devkit test\n\nlint:\n\t@devkit lint\n\ndeps-install:\n\t@devkit deps install\n\ndeps-check:\n\t@devkit deps check\n\n",
+    )
     write(tmp_path, "galaxy.yml", "---\nnamespace: ex\nname: demo\nversion: 1.2.0\n")
     write(tmp_path, "CHANGELOG.md", CHANGELOG)
     write(
@@ -753,3 +758,27 @@ def test_cli_not_a_git_repository_exits_2(repo: Path) -> None:
 def test_this_repository_conforms() -> None:
     p = devkit_conform(ROOT)
     assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_15_makefile_logic_fails_and_single_call_passes(repo: Path) -> None:
+    path = repo / "Makefile"
+    good = path.read_text()
+    path.write_text(good.replace("@devkit test", "@devkit test && echo ok"))
+    assert rules(repo) == ["CONFORM-15"]
+    path.write_text(good)
+    assert rules(repo) == []
+
+
+def test_15_policy_exemption(repo: Path) -> None:
+    path = repo / "Makefile"
+    path.write_text(path.read_text().replace("@devkit test", "@echo policy"))
+    write(repo, "devkit.toml", '[conform]\nmakefile_policy_targets = ["test"]\n')
+    assert rules(repo) == []
+
+
+def test_16_dependency_inputs_opt_in(repo: Path) -> None:
+    write(repo, "devkit.toml", "[conform]\nrequire_dependency_inputs = true\n")
+    assert rules(repo) == ["CONFORM-16"] * 4
+    for name in ("bindep.txt", "pyproject.toml", "uv.lock", "requirements.yml"):
+        write(repo, name, "")
+    assert rules(repo) == []

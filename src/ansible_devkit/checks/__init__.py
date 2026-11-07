@@ -36,6 +36,11 @@ class Check:
 
 CHECKS: tuple[Check, ...] = (
     Check(
+        "inventory-strict",
+        "check_inventory_strict.py",
+        "inventory plugin expressions require strict evaluation (INVSTRICT-01)",
+    ),
+    Check(
         "silent-guards",
         "check_silent_guards.py",
         "guards, gates and conditionals in Ansible YAML that cannot fire or test the wrong thing",

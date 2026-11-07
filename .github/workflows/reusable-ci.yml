@@ -76,7 +76,7 @@ jobs:
       - name: Test suites
         # Each tests/test_*.py entry point is named here on purpose: the ci-covers-hook-tests check
         # (part of `devkit check all` below) requires every suite in tests/ to be run by a workflow.
-        run: uv run pytest -q tests/test_suites.py tests/test_cli.py tests/test_conform.py tests/test_template.py
+        run: uv run pytest -q tests/test_suites.py tests/test_cli.py tests/test_conform.py tests/test_template.py tests/test_deps.py tests/test_inventory_strict.py
       - name: devkit check all (self-check)
         run: uv run devkit check all
       - name: Formatting (black from the locked dev group)

@@ -219,3 +219,18 @@ export.manifest every path in the repository (CONFORM-10: it equals `git ls-file
 ## License
 
 GPL-3.0-or-later. See `LICENSE`; every source file carries an SPDX header.
+
+### Dependencies and repository conformance
+
+`devkit deps install` installs the roles and collections in `requirements.yml` with
+`ansible-galaxy --force`, verifies their directories and records a JSON stamp with the requirements SHA-256 and resolved
+role and collection paths. Git
+collection entries must have `# collection: namespace.name` on the name line.
+`devkit deps check` compares the stamp and verifies every required directory without network access. Both accept
+`--requirements`, `--collections-path`, and `--roles-path`.
+
+`devkit check inventory-strict` enforces INVSTRICT-01 for inventory plugin expressions.
+`devkit conform` requires a Makefile with help, test, lint, deps-install and deps-check
+targets, each with a single devkit invocation. `[conform] makefile_policy_targets`
+can exempt named targets. Set `[conform] require_dependency_inputs = true` to require
+`bindep.txt`, `pyproject.toml`, `uv.lock` and `requirements.yml` (ADR-59).

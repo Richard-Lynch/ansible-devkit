@@ -4,6 +4,10 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [0.6.0] — 2026-11-07
+
+- Add dependency installation and stamp checks, strict inventory checks, and thin Makefile conformance.
+
 ## [0.5.1] — 2026-11-07
 
 ### Fixed
