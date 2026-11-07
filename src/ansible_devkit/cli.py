@@ -169,6 +169,79 @@ def record_trap_hits() -> None:
     sys.exit(_run(BY_NAME["record-trap-hits"], ()))
 
 
+@devkit.group()
+def deps() -> None:
+    """Install and check Galaxy dependencies."""
+
+
+def _deps_options(fn):
+    for option in reversed(
+        [
+            click.option(
+                "--requirements",
+                type=click.Path(path_type=Path),
+                default=Path("requirements.yml"),
+                show_default=True,
+            ),
+            click.option(
+                "--collections-path",
+                type=click.Path(path_type=Path),
+                default=Path("collections.galaxy"),
+                show_default=True,
+            ),
+            click.option(
+                "--roles-path",
+                type=click.Path(path_type=Path),
+                default=Path("roles.galaxy"),
+                show_default=True,
+            ),
+        ]
+    ):
+        fn = option(fn)
+    return fn
+
+
+@deps.command("install")
+@_deps_options
+def deps_install(requirements: Path, collections_path: Path, roles_path: Path) -> None:
+    """Install roles and collections, then stamp verified requirements."""
+    from ansible_devkit import deps as dependency
+    import yaml
+
+    try:
+        dependency.install(requirements, collections_path, roles_path)
+    except (OSError, ValueError, yaml.YAMLError, subprocess.CalledProcessError) as exc:
+        click.echo(f"devkit deps install: {exc}", err=True)
+        sys.exit(1)
+
+
+@deps.command("check")
+@_deps_options
+def deps_check(requirements: Path, collections_path: Path, roles_path: Path) -> None:
+    """Check the installed requirements stamp without network access."""
+    from ansible_devkit import deps as dependency
+
+    valid = dependency.check(requirements, collections_path, roles_path)
+    if not valid:
+        click.echo(
+            "installed collections do not match requirements.yml - run make deps-install", err=True
+        )
+        sys.exit(1)
+
+
+@devkit.command("test")
+def run_tests() -> None:
+    """Run the repository's pytest suite."""
+    sys.exit(subprocess.run([sys.executable, "-m", "pytest"], check=False).returncode)
+
+
+@devkit.command("lint")
+@click.pass_context
+def lint(ctx: click.Context) -> None:
+    """Run all gate checks."""
+    ctx.invoke(check, name="all", args=(), list_=False)
+
+
 devkit.add_command(argspec_cli, "argspec")
 
 

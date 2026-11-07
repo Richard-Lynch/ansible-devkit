@@ -37,7 +37,9 @@ def generate(tmp_path: Path, **overrides: object) -> Path:
     shutil.copy(ROOT / "copier.yml", src / "copier.yml")
     shutil.copytree(ROOT / "template", src / "template")
     dst = tmp_path / "out"
-    copier.run_copy(str(src), str(dst), data={**ANSWERS, **overrides}, defaults=True, quiet=True)
+    copier.run_copy(
+        str(src), str(dst), data={**ANSWERS, **overrides}, defaults=True, quiet=True
+    )
     subprocess.run(["git", "init", "-q", str(dst)], check=True)
     subprocess.run(["git", "-C", str(dst), "add", "-A"], check=True)
     return dst
@@ -61,7 +63,9 @@ def test_generated_repository_passes_devkit_check_all(tmp_path: Path) -> None:
 
 
 def test_answers_reach_the_files(tmp_path: Path) -> None:
-    out = generate(tmp_path, version="2.3.4", devkit_ref="v9.8.7", ansible_core=["2.21"])
+    out = generate(
+        tmp_path, version="2.3.4", devkit_ref="v9.8.7", ansible_core=["2.21"]
+    )
     galaxy = yaml.safe_load((out / "galaxy.yml").read_text())
     assert (galaxy["namespace"], galaxy["name"], galaxy["version"]) == (
         "example_ns",
@@ -69,7 +73,10 @@ def test_answers_reach_the_files(tmp_path: Path) -> None:
         "2.3.4",
     )
     assert galaxy["license"] == ["GPL-3.0-or-later"]
-    assert galaxy["repository"] == "https://github.com/example-owner/ansible-collection-demo"
+    assert (
+        galaxy["repository"]
+        == "https://github.com/example-owner/ansible-collection-demo"
+    )
     assert "## [2.3.4] — 2026-01-02" in (out / "CHANGELOG.md").read_text()
     ci = yaml.safe_load((out / ".github/workflows/ci.yml").read_text())
     assert ci["jobs"]["ci"]["uses"].endswith("reusable-ci.yml@v9.8.7")
@@ -129,7 +136,8 @@ def test_generated_repository_has_python_version_and_renovate(tmp_path: Path) ->
     rules = cfg["packageRules"]
     assert rules[0] == {**rules[0], "matchPackageNames": ["/.*/"], "automerge": False}
     assert any(
-        r.get("matchDatasources") == ["galaxy-collection", "galaxy"] and r["automerge"] is False
+        r.get("matchDatasources") == ["galaxy-collection", "galaxy"]
+        and r["automerge"] is False
         for r in rules
     )
     ok = [r for r in rules if r.get("automerge")]
@@ -148,3 +156,21 @@ def test_preset_never_turns_automerge_on() -> None:
     assert own["extends"] == [
         f"github>Richard-Lynch/ansible-devkit//renovate/default#v{__version__}"
     ]
+
+
+def test_generated_uv_lock_is_current(tmp_path: Path) -> None:
+    out = generate(tmp_path, name="my_collection", version="2.3.4")
+    result = subprocess.run(
+        ["uv", "lock", "--check", "--offline"], cwd=out, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_generated_repository_ignores_galaxy_dependencies(tmp_path: Path) -> None:
+    out = generate(tmp_path)
+    for directory in ("collections.galaxy", "roles.galaxy"):
+        result = subprocess.run(
+            ["git", "-C", str(out), "check-ignore", f"{directory}/example/file"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, directory

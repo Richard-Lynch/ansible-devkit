@@ -83,8 +83,8 @@ def test_check_all_on_this_repo_is_clean() -> None:
     assert p.returncode == 0, p.stdout[-4000:] + p.stderr[-4000:]
     summary = p.stderr[p.stderr.rfind("devkit check all:") :]
     assert "FINDINGS" not in summary and "COULD NOT RUN" not in summary, summary
-    # 14 gates: 13 run clean, and the one devkit.toml skips is printed with its reason.
-    assert summary.count("clean") == 15, summary
+    # Sixteen gates run clean, and the one devkit.toml skips is printed with its reason.
+    assert summary.count("clean") == 16, summary
     assert "SKIPPED        ha-restart-validated — this repository has no Ansible" in summary
 
 

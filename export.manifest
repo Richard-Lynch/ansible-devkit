@@ -12,6 +12,7 @@
 .python-version
 CHANGELOG.md
 LICENSE
+Makefile
 README.md
 copier.yml
 deps-baseline.json
@@ -36,6 +37,7 @@ src/ansible_devkit/checks/check_dependencies.py
 src/ansible_devkit/checks/check_diff_leak.py
 src/ansible_devkit/checks/check_docs_drift.py
 src/ansible_devkit/checks/check_ha_restart_validated.py
+src/ansible_devkit/checks/check_inventory_strict.py
 src/ansible_devkit/checks/check_molecule_verify.py
 src/ansible_devkit/checks/check_no_tracked_ignored.py
 src/ansible_devkit/checks/check_regex_anchors.py
@@ -48,6 +50,7 @@ src/ansible_devkit/checks/record_trap_hits.py
 src/ansible_devkit/checks/trap_report.py
 src/ansible_devkit/cli.py
 src/ansible_devkit/conform.py
+src/ansible_devkit/deps.py
 src/ansible_devkit/disclose/__init__.py
 src/ansible_devkit/disclose/disclose.py
 src/ansible_devkit/disclose/gitleaks-base.toml
@@ -61,12 +64,17 @@ template/.gitignore.jinja
 template/.python-version.jinja
 template/CHANGELOG.md.jinja
 template/LICENSE
+template/Makefile
 template/README.md.jinja
+template/bindep.txt
 template/devkit.toml.jinja
 template/export.manifest
 template/galaxy.yml.jinja
 template/meta/runtime.yml.jinja
+template/pyproject.toml.jinja
 template/renovate.json.jinja
+template/requirements.yml
+template/uv.lock.jinja
 tests/suites/_paths.py
 tests/suites/fixture_repo/devkit.toml
 tests/suites/test_affected_scenarios.py
@@ -92,6 +100,8 @@ tests/suites/test_portable_checks.py
 tests/suites/test_record_trap_hits.py
 tests/test_cli.py
 tests/test_conform.py
+tests/test_deps.py
+tests/test_inventory_strict.py
 tests/test_suites.py
 tests/test_template.py
 uv.lock
