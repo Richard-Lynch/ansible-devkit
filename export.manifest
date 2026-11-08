@@ -20,6 +20,7 @@ deps-baseline.json
 devkit.toml
 devkit.toml.example
 docs/RULES.md
+docs/scratch/orchestrator-proof.md
 export.manifest
 pyproject.toml
 renovate.json
