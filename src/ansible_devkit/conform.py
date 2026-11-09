@@ -34,6 +34,7 @@ package's template (copier.yml, template/) generates:
 
   CONFORM-15  Makefile has the five standard targets with single devkit recipes
   CONFORM-16  opt-in dependency input files exist (ADR-59)
+  CONFORM-17  Makefile has a thin hooks-install target calling devkit hooks install
 
 One line per problem on stdout, `<path>: <RULE> <message>`. Exit 0 when the repository meets the
 standard, 1 when it does not, 2 when a rule could not be evaluated (no git repository, an
@@ -544,12 +545,18 @@ def check_disclose_allow(root: Path) -> list[Problem]:
 def check_makefile(root: Path, config: dict) -> list[Problem]:
     path = root / "Makefile"
     if not path.is_file():
-        return [Problem("Makefile", "CONFORM-15", "missing")]
+        return [
+            Problem("Makefile", "CONFORM-15", "missing"),
+            Problem("Makefile", "CONFORM-17", "missing hooks-install target"),
+        ]
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as exc:
         return [Problem("Makefile", "CONFORM-15", f"unreadable: {exc}", unchecked=True)]
-    targets = {name: [] for name in ("help", "test", "lint", "deps-install", "deps-check")}
+    targets = {
+        name: []
+        for name in ("help", "test", "lint", "deps-install", "deps-check", "hooks-install")
+    }
     seen = set()
     active = []
     for line in lines:
@@ -574,6 +581,18 @@ def check_makefile(root: Path, config: dict) -> list[Problem]:
         ]
     out = []
     for name, recipe in targets.items():
+        if name == "hooks-install":
+            if name not in seen or len(recipe) != 1 or not re.fullmatch(
+                r"@?devkit\s+hooks\s+install(?:\s+--repo-root\s+\.)?", recipe[0]
+            ):
+                out.append(
+                    Problem(
+                        "Makefile",
+                        "CONFORM-17",
+                        "hooks-install must have a single `devkit hooks install` invocation",
+                    )
+                )
+            continue
         if name not in seen:
             out.append(Problem("Makefile", "CONFORM-15", f"missing target {name}"))
         elif name not in policy and (

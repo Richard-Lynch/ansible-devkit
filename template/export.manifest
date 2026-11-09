@@ -17,6 +17,7 @@ meta/runtime.yml
 renovate.json
 Makefile
 bindep.txt
+bootstrap.sh
 requirements.yml
 pyproject.toml
 uv.lock

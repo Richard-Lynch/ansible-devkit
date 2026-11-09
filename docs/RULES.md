@@ -258,5 +258,8 @@ unreadable file). Each rule has a failing fixture and a passing near-miss in
 | CONFORM-12 | `.github/actionlint.yaml` (the reusable CI's actionlint job reads it)                                                                      |
 | CONFORM-13 | in a collection, a `README.md` and a `meta/main.yml` with a non-empty `galaxy_info.description` in every `roles/<role>/` (Galaxy's importer rejects a role with no README and lists one with no description without it; build and upload both succeed) |
 | CONFORM-14 | `.disclose-allow` at the root, every line an exemption the disclose gate accepts (`<rule-glob> <location-glob> <reason of three words or more>`, a location that is not `*`); the shared disclose workflow reads it from a pull request's base, so a file it would refuse fails every pull request of the repository |
+| CONFORM-15 | thin `help`, `test`, `lint`, `deps-install` and `deps-check` Makefile targets, each invoking devkit once, except explicit `makefile_policy_targets` exemptions |
+| CONFORM-16 | `bindep.txt`, `pyproject.toml`, `uv.lock` and `requirements.yml` when `require_dependency_inputs = true` |
+| CONFORM-17 | a `hooks-install` Makefile target with exactly one `devkit hooks install` invocation (optionally `--repo-root .`); no failure swallowing or policy exemption |
 
 - **[FAIL INVSTRICT-01]** Inventory plugin expressions require `strict: true`; group conditionals must not be quoted string literals.

@@ -53,6 +53,9 @@ src/ansible_devkit/checks/trap_report.py
 src/ansible_devkit/cli.py
 src/ansible_devkit/conform.py
 src/ansible_devkit/deps.py
+src/ansible_devkit/git_hooks/pre-commit
+src/ansible_devkit/git_hooks/pre-push
+src/ansible_devkit/hooks.py
 src/ansible_devkit/disclose/__init__.py
 src/ansible_devkit/disclose/disclose.py
 src/ansible_devkit/disclose/gitleaks-base.toml
@@ -69,6 +72,7 @@ template/LICENSE
 template/Makefile
 template/README.md.jinja
 template/bindep.txt
+template/bootstrap.sh
 template/devkit.toml.jinja
 template/export.manifest
 template/galaxy.yml.jinja
@@ -77,6 +81,7 @@ template/pyproject.toml.jinja
 template/renovate.json.jinja
 template/requirements.yml
 template/uv.lock.jinja
+tests/conftest.py
 tests/suites/_paths.py
 tests/suites/fixture_repo/devkit.toml
 tests/suites/test_affected_scenarios.py

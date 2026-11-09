@@ -75,3 +75,12 @@ def test_invalid_inventory_yaml_is_reported(tmp_path: Path) -> None:
     source.write_text("plugin: [invalid\n")
     findings, _ = scan(tmp_path)
     assert len(findings) == 1 and "inventories/bad.yml" in findings[0]
+
+
+def test_hook_scratch_is_excluded_but_index_snapshot_can_be_scanned(tmp_path: Path) -> None:
+    snapshot = tmp_path / ".devkit-hooks-example" / "index"
+    snapshot.mkdir(parents=True)
+    (snapshot / "inventory.yml").write_text("plugin: constructed\ngroups: {web: hostname}\n")
+    assert scan(tmp_path) == ([], 0)
+    findings, count = scan(snapshot)
+    assert count == 1 and len(findings) == 1

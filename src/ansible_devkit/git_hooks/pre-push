@@ -1,0 +1,8 @@
+#!/bin/sh
+export PYTHONDONTWRITEBYTECODE=1
+devkit="${0%/*}/../../../../../bin/devkit"
+if [ ! -x "$devkit" ]; then
+    printf '%s\n' 'hooks: missing required tool: pinned devkit' >&2
+    exit 2
+fi
+exec "$devkit" hooks run pre-push --from-git "$@"

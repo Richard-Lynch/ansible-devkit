@@ -49,6 +49,9 @@ def scan(root: Path) -> tuple[list[str], int]:
                 part in {".git", ".venv", "collections.galaxy", "roles.galaxy"}
                 for part in path.parts
             )
+            or any(
+                part.startswith(".devkit-hooks-") for part in path.relative_to(root).parts[:-1]
+            )
             or not path.is_file()
         ):
             continue

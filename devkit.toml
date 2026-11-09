@@ -19,6 +19,9 @@ skip = [
 vendored = []
 ansible_roots = ["roles", "playbooks"]
 
+[hooks]
+pre_push = "devkit test && devkit check all && devkit conform && black --check --diff ."
+
 [docs]
 # docs/RULES.md is this package's rulebook: DOCRULE-01 requires every rule the sources below can
 # emit to appear in it, and TRAPTAG-01 requires every bullet in its trap section to be tagged.

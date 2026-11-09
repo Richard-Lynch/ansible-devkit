@@ -167,3 +167,21 @@ def test_generated_repository_ignores_galaxy_dependencies(tmp_path: Path) -> Non
             text=True,
         )
         assert result.returncode == 0, directory
+
+
+def test_bootstrap_installs_hooks_automatically(tmp_path: Path, installed_devkit: Path) -> None:
+    out = generate(tmp_path)
+    for expected in ("hooks: installed\n", "hooks: ok\n"):
+        result = subprocess.run(
+            ["sh", "bootstrap.sh"], cwd=out, capture_output=True, text=True, timeout=60
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert expected.strip() in result.stdout.splitlines()
+    result = subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", "config", "--local", "--get", "core.hooksPath"],
+        cwd=out,
+        capture_output=True,
+        text=True,
+    )
+    directory = Path(result.stdout.strip())
+    assert result.returncode == 0 and directory.is_dir() and not directory.is_relative_to(out)

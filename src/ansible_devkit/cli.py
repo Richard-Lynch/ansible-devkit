@@ -5,6 +5,7 @@
   devkit check all                run every gate check against the current repository
   devkit check --list             the registry, with which checks `all` runs
   devkit conform [--path DIR]     check a repository against the public-repository standard
+  devkit hooks ...               install devkit-owned Git hooks or run their offline gates
   devkit disclose ...             the disclosure gate (see ansible_devkit.disclose)
   devkit argspec ...              the argspec generator (also installed as `argspec`)
   devkit trap-report ...          rank recorded trap hits
@@ -21,12 +22,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import click
 
 from ansible_devkit import __version__
 from ansible_devkit import conform as _conform
+from ansible_devkit import hooks as _hooks
 from ansible_devkit.argspec.cli import cli as argspec_cli
 from ansible_devkit.checks import BY_NAME, CHECKS, Check, _devkit_config
 from ansible_devkit.disclose import disclose as _disclose
@@ -140,6 +143,52 @@ def conform(path: Path) -> None:
             err=True,
         )
     sys.exit(rc)
+
+
+@devkit.group()
+def hooks() -> None:
+    """Install devkit-owned Git hooks, or run their gates manually (offline)."""
+
+
+@hooks.command("path")
+def hooks_path() -> None:
+    """Print the fixed hooks directory shipped in this installed devkit."""
+    click.echo(str(_hooks.hooks_path()))
+
+
+@hooks.command("install")
+@click.option("--repo-root", type=click.Path(path_type=Path), default=Path("."))
+def hooks_install(repo_root: Path) -> None:
+    """Set core.hooksPath; no repository-owned hook code is installed or executed."""
+    try:
+        message, status = _hooks.install(repo_root)
+    except (_hooks.HookError, OSError, UnicodeError) as exc:
+        message, status = f"hooks: NOT INSTALLED ({' '.join(str(exc).splitlines())})", 2
+    click.echo(message)
+    raise click.exceptions.Exit(status)
+
+
+@hooks.command("run")
+@click.argument("event", type=click.Choice(["pre-commit", "pre-push"]))
+@click.argument("git_args", nargs=-1)
+@click.option(
+    "--staged",
+    is_flag=True,
+    help="Check index contents only (always true for pre-commit).",
+)
+@click.option("--from-git", is_flag=True, hidden=True)
+def hooks_run(event: str, git_args: tuple[str, ...], staged: bool, from_git: bool) -> None:
+    """Run a gate without committing/pushing; no Git metadata writes are needed."""
+    if staged and event != "pre-commit":
+        raise click.UsageError("--staged is only valid for pre-commit")
+    if git_args and (event != "pre-push" or len(git_args) != 2):
+        raise click.UsageError("only pre-push accepts Git's remote name and URL")
+    try:
+        status = _hooks.run(event, sys.stdin.read() if from_git else None)
+    except (_hooks.HookError, OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        click.echo(f"hooks: {event} FAILED: {exc}", err=True)
+        status = 2
+    raise click.exceptions.Exit(status)
 
 
 @devkit.command(
