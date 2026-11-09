@@ -1,3 +1,5 @@
+.PHONY: help test lint deps-install deps-check hooks-install
+
 help:
 	@devkit --help
 
@@ -12,4 +14,7 @@ deps-install:
 
 deps-check:
 	@devkit deps check
+
+hooks-install:
+	@devkit hooks install
 

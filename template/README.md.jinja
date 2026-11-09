@@ -25,6 +25,19 @@ Requires ansible-core {{ requires_ansible }}.
 
 ## Development
 
+Provision a non-editable devkit toolchain outside this checkout, with Black
+available for Python formatting, and put its `bin` directory on `PATH`.
+After the first checkout (or `git init`), run setup once:
+
+```sh
+sh bootstrap.sh                 # automatically runs make hooks-install
+```
+
+Setup points Git at the installed devkit's own hooks, never code in a tracked
+`.githooks/` directory. The toolchain must be mounted read-only in agent
+sandboxes. Host-side Git against an agent clone must always use
+`git -c core.hooksPath=/dev/null ...`; the gates belong inside the sandbox and CI.
+
 ```sh
 # from a checkout at ansible_collections/{{ namespace }}/{{ name }}
 ansible-test sanity --docker
@@ -32,7 +45,15 @@ ansible-test units --docker
 ansible-galaxy collection build
 devkit conform                  # the repository standard (ansible-devkit)
 devkit check all                # the static checks, configured by devkit.toml
+devkit hooks run pre-commit --staged  # the same staged gate, without committing
+devkit hooks run pre-push        # the full gate, without pushing
 ```
+
+The manual gates also work with read-only `.git` (pre-commit checks the
+existing index). Hooks require no network, never install missing tools, and
+fail if a required tool is absent. Pre-push defaults to `make lint`; customize
+`[hooks] pre_push` in `devkit.toml` for a different offline full gate.
+`--no-verify` cannot be prevented by Git hooks: CI is the real backstop.
 
 CI, the disclosure gate and releases are the shared workflows of
 [ansible-devkit](https://github.com/Richard-Lynch/ansible-devkit), called from

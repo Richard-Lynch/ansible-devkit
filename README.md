@@ -28,6 +28,9 @@ Generic tooling for Ansible role repositories:
   to a devkit tag, GPL-3.0, a CHANGELOG section for the declared version, an
   `export.manifest` equal to `git ls-files`, SPDX headers.
 
+- **`devkit hooks`** — install devkit-owned Git hooks once; run the same offline
+  staged and full gates automatically, or manually in a sandbox with read-only Git metadata.
+
 Everything that names an estate — hosts, addresses, tree roots, vault names —
 lives in the consuming repository's `devkit.toml`, never in this package.
 
@@ -230,7 +233,137 @@ collection entries must have `# collection: namespace.name` on the name line.
 `--requirements`, `--collections-path`, and `--roles-path`.
 
 `devkit check inventory-strict` enforces INVSTRICT-01 for inventory plugin expressions.
-`devkit conform` requires a Makefile with help, test, lint, deps-install and deps-check
+`devkit conform` requires a Makefile with help, test, lint, deps-install, deps-check and hooks-install
 targets, each with a single devkit invocation. `[conform] makefile_policy_targets`
-can exempt named targets. Set `[conform] require_dependency_inputs = true` to require
+can exempt named targets except hooks-install (CONFORM-17 always requires
+`devkit hooks install`, not a wrapper that ignores its failure).
+Set `[conform] require_dependency_inputs = true` to require
 `bindep.txt`, `pyproject.toml`, `uv.lock` and `requirements.yml` (ADR-59).
+
+### Git hooks: automatic gates, including agent sandboxes
+
+Provision a **non-editable devkit installation outside the work tree**, in a
+standard POSIX Python virtual environment with `bin/devkit`. Include Black in
+the toolchain (or the repository's existing environment) for staged Python
+formatting. The installed devkit already includes its YAML lint dependency,
+`ruamel.yaml`; hooks do not download or install anything. A checkout-local
+`.venv` or editable source checkout is not a safe location for the hook package.
+
+```sh
+/opt/devkit/bin/devkit hooks path
+/opt/devkit/bin/devkit hooks install --repo-root /workspace/repo
+```
+
+`hooks path` prints the absolute directory shipped inside that installation.
+`hooks install` sets `core.hooksPath` to that **one fixed devkit-owned directory**,
+never `.githooks/`, a copied shim in the repository, or a generated script in
+Git metadata. Its packaged executable shims invoke the **same installation's
+pinned `bin/devkit`**, not whichever `devkit` happens to be on `PATH`. Upgrading
+devkit in a versioned environment requires rerunning install to select its new
+path. Renovate bumps and their release notes can propagate these gates; this
+feature does not change any consuming repository or coder deployment yet.
+
+Install always prints exactly one line:
+
+| Situation | Output | Exit |
+| --- | --- | --- |
+| First install, or replacing another hooksPath | `hooks: installed` | 0 |
+| Already points to this installation, including read-only `.git` | `hooks: ok` | 0 |
+| `CI=true` (CI runs the gates directly) | `hooks: skipped (CI=true)` | 0 |
+| Read-only Git metadata and not enabled | `hooks: NOT INSTALLED (read-only .git)` | 3 |
+
+Other errors print one `hooks: NOT INSTALLED (...)` line and exit 2. There is
+no silent success. Linked worktrees and worktree-specific Git configuration
+are supported. `make hooks-install` is the thin repository entrypoint,
+enforced by `devkit conform`. The Copier template's `bootstrap.sh` calls it;
+run `sh bootstrap.sh` after `git init` on a new checkout, with the provisioned
+devkit on `PATH`. Normal setup then installs hooks without a separate reminder.
+
+#### What the hooks check
+
+**Pre-commit** reads the actual index blobs, including newly added files,
+renames and partial staging; unstaged edits and untracked files are not checked.
+Only staged regular `.py`, `.yml` and `.yaml` files are examined. It runs:
+
+- Black's formatter check on staged Python, using the repository's formatter configuration.
+- YAML lint using devkit's existing `ruamel.yaml`: syntax, duplicate keys,
+  trailing whitespace, indentation tabs and the final newline (Ansible tags are accepted).
+- The file-local fast subset of `devkit check`: `inventory-strict`,
+  `rootfs-seal` (YAML) and `regex-anchors` (Python), over only those staged files.
+
+Index snapshots, temporary files and caches live in a temporary directory
+**inside the work tree** and are cleaned up. Neither the index nor `.git` is
+written. Git is invoked without optional locks, Python subprocess bytecode is
+disabled, and no formatter auto-fixes the working copy. Missing required tools
+(for example `black`) fail with the tool's name; they never cause a skip.
+Cross-file and repository-wide checks belong to the full gate, not this subset.
+
+**Pre-push** runs the full repository gate. Configure a shell command in
+`devkit.toml` when the repository has a dedicated offline target:
+
+```toml
+[hooks]
+pre_push = "make lint-hooks"
+```
+
+Without this setting it runs `make lint` if the Makefile defines `lint`, else
+`devkit check all`. A nonzero gate exit refuses the push; the standalone runner
+preserves its exit status. Git's supplied local/remote ref updates are compared
+without fetching: an empty update stream or changes to commits with identical
+trees print `hooks: pre-push skipped (push changes no files)`. New and deleted
+refs are checked too. Missing comparison objects fail closed rather than fetch
+or skip. A manual run has no ref-update stream, so always runs the full gate.
+
+#### Manual commands for agents
+
+These are plain commands, not commands that require a commit or push:
+
+```sh
+devkit hooks run pre-commit --staged
+devkit hooks run pre-push
+```
+
+Both work with read-only `.git`. The first checks the **already staged index**;
+if an agent cannot stage its new edits, the second runs the full gate against
+its working tree before handing work back. They need only the provisioned
+tools, no network. The runner redirects common tool caches/temporary files
+into the work tree and sets `UV_OFFLINE=1`, `UV_NO_SYNC=1` and `PIP_NO_INDEX=1`.
+Configured gate commands must themselves be offline and confine their writes
+to the work tree: the runner is not an OS sandbox for arbitrary shell commands.
+Whole-tree tools must exclude the reserved `.devkit-hooks-*` scratch directories;
+devkit's inventory scanner and the template's `.gitignore` already do so.
+The sandbox's disabled network and read-only external mounts enforce that
+boundary. Do not configure targets that install tools, sync environments or
+download dependencies; provision those in the image first.
+
+#### Security and coder deployment requirement
+
+A tracked, agent-writable `.githooks/` would let host-side Git execute code
+written by an agent on the host: the same vulnerability class as the
+worker-sessiond 2.1.2 P1 finding. Keeping the entrypoints in the installed
+devkit, outside the clone, avoids that trust inversion. For coder workers the
+**entire devkit toolchain, including its pinned binary and hooks directory,
+must be mounted read-only from the image**, at a stable absolute path. The
+host can set that path before starting the sandbox **without executing any
+repository code**:
+
+```sh
+hooks_dir=$(/opt/devkit/bin/devkit hooks path)
+git -c core.hooksPath=/dev/null -C "$clone" config --local core.hooksPath "$hooks_dir"
+```
+
+**Every host-side Git command against an agent clone must explicitly disable
+hooks with `git -c core.hooksPath=/dev/null ...`**, including host commits and
+pushes. Do not run these gates on the host: the actual full gate can invoke
+the clone's Makefile/configured command and belongs **inside the sandbox and
+in CI**. A packaged trusted shim is not permission to execute a repository's
+gate on the host. An automated integration test demonstrates refusal with
+hooks enabled and bypass with this explicit host override. Coder service
+mounting and host-command wiring are requirements for a later adoption card,
+not changes included here.
+
+Git's `--no-verify` bypass **cannot be prevented by Git hooks**; writable Git
+configuration can also be changed by its owner. Hooks provide automatic local
+feedback, not a security boundary against their caller. **CI is the real
+backstop**, and must independently run the required full gate and formatter
+check with required branch protection, regardless of installed hooks.

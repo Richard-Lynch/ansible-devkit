@@ -114,7 +114,7 @@ def repo(tmp_path: Path) -> Path:
     write(
         tmp_path,
         "Makefile",
-        "help:\n\t@devkit --help\n\ntest:\n\t@devkit test\n\nlint:\n\t@devkit lint\n\ndeps-install:\n\t@devkit deps install\n\ndeps-check:\n\t@devkit deps check\n\n",
+        "help:\n\t@devkit --help\n\ntest:\n\t@devkit test\n\nlint:\n\t@devkit lint\n\ndeps-install:\n\t@devkit deps install\n\ndeps-check:\n\t@devkit deps check\n\nhooks-install:\n\t@devkit hooks install\n",
     )
     write(tmp_path, "galaxy.yml", "---\nnamespace: ex\nname: demo\nversion: 1.2.0\n")
     write(tmp_path, "CHANGELOG.md", CHANGELOG)
@@ -781,4 +781,35 @@ def test_16_dependency_inputs_opt_in(repo: Path) -> None:
     assert rules(repo) == ["CONFORM-16"] * 4
     for name in ("bindep.txt", "pyproject.toml", "uv.lock", "requirements.yml"):
         write(repo, name, "")
+    assert rules(repo) == []
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "",
+        "hooks-install:\n\t@echo devkit hooks install\n",
+        "hooks-install:\n\t@devkit --help\n",
+        "hooks-install:\n\t@devkit hooks install || true\n",
+        "hooks-install:\n\t@-devkit hooks install\n",
+        "hooks-install:\n\t@devkit hooks install\n\t@echo done\n",
+    ],
+)
+def test_17_missing_or_ineffective_hooks_install_fails(repo: Path, replacement: str) -> None:
+    path = repo / "Makefile"
+    path.write_text(
+        path.read_text().replace("hooks-install:\n\t@devkit hooks install\n", replacement)
+    )
+    write(repo, "devkit.toml", '[conform]\nmakefile_policy_targets = ["hooks-install"]\n')
+    assert rules(repo) == ["CONFORM-17"]
+
+
+def test_17_inline_hooks_install_near_miss_passes(repo: Path) -> None:
+    path = repo / "Makefile"
+    path.write_text(
+        path.read_text().replace(
+            "hooks-install:\n\t@devkit hooks install\n",
+            ".PHONY: hooks-install\nhooks-install: ; @devkit hooks install --repo-root .\n",
+        )
+    )
     assert rules(repo) == []

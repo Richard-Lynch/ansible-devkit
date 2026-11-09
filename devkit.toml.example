@@ -117,6 +117,11 @@ patterns = [
   { regex = '\b(?:node-a|node-b)\b', label = "real node hostname" },
 ]
 
+[hooks]
+# Optional full pre-push gate; must use provisioned tools, no network, writes only in the work tree.
+# Without this key: make lint if defined, otherwise devkit check all.
+pre_push = "make lint-hooks"
+
 [dependencies]
 # devkit check dependencies (DEP-02..05). requirement_files: the pinned requirements files a
 # `pip install -r` may name (DEP-02); empty = none. baseline: violations tolerated, each with a

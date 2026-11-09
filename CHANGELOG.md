@@ -4,6 +4,52 @@ All notable changes to `ansible-devkit`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/). Installed from git tags (`v<version>`).
 
+## [Unreleased]
+
+### Added
+
+- **Devkit-owned Git hooks**, installed idempotently with `devkit hooks install
+  [--repo-root DIR]`; `devkit hooks path` prints their fixed absolute directory.
+  Installation reports exactly one line, including `CI=true` skips. Already-enabled
+  hooks remain usable with read-only `.git`; read-only metadata without hooks
+  reports `hooks: NOT INSTALLED (read-only .git)` and exits **3**, not success.
+- **Offline staged pre-commit gate**: Black checks staged Python; devkit's existing
+  `ruamel.yaml` dependency lints staged YAML (syntax, duplicate keys and whitespace).
+  The file-local `inventory-strict`, `rootfs-seal` and `regex-anchors` fast checks run
+  only against staged YAML/Python blobs, including newly added and partially staged
+  files. Required tools must be provisioned; missing tools fail rather than skip.
+- **Full pre-push gate**, configurable with `[hooks] pre_push = "make lint-hooks"`
+  in `devkit.toml`; defaults to `make lint`, else `devkit check all`. Failures refuse
+  a push. Git ref updates whose trees change no files explicitly skip the gate;
+  missing local comparison objects fail closed without fetching.
+- **Plain agent commands**: `devkit hooks run pre-commit --staged` and
+  `devkit hooks run pre-push` run without committing or pushing, including when Git
+  metadata is read-only. The former checks the existing index; the latter always
+  runs the full working-tree gate when invoked manually. Snapshots, temporary files
+  and common tool caches stay inside the work tree; no dependency installation or
+  network access is required. Custom gate commands must obey that same contract.
+- **CONFORM-17** requires a thin `hooks-install` Makefile target calling
+  `devkit hooks install`, without failure-swallowing wrappers or policy exemptions.
+  Devkit itself and the Copier template provide it; the generated `bootstrap.sh`
+  invokes it during first-checkout setup. CI also checks devkit's own conformance.
+
+### Security
+
+- `core.hooksPath` points to the hooks **shipped in the installed devkit package
+  outside the work tree**, never tracked, agent-writable `.githooks/` code. A
+  non-editable standard POSIX virtual environment supplies the pinned `bin/devkit`
+  called by the shims; a checkout-local environment is refused. This avoids the
+  host-executes-agent-code vulnerability class seen in worker-sessiond 2.1.2 P1.
+- Coder deployments must mount the **whole devkit toolchain read-only from the
+  image**. Hosts may pre-set the fixed hooksPath without executing repository code,
+  but **every host-side Git command against an agent clone must use
+  `git -c core.hooksPath=/dev/null ...`**. The gate itself can execute repository
+  commands and belongs in the sandbox and CI, never on the host. Actual coder
+  service wiring and adoption in other repositories are deferred to a later card.
+- Git hooks cannot prevent `--no-verify`; **CI remains the real backstop**. New
+  releases can propagate these gates through Renovate bumps and reviewer-visible
+  release notes. No package version or consuming repository is changed here.
+
 ## [0.6.0] — 2026-11-07
 
 - Add dependency installation and stamp checks, strict inventory checks, and thin Makefile conformance.
