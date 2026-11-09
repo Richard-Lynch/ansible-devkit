@@ -797,7 +797,9 @@ def test_16_dependency_inputs_opt_in(repo: Path) -> None:
 )
 def test_17_missing_or_ineffective_hooks_install_fails(repo: Path, replacement: str) -> None:
     path = repo / "Makefile"
-    path.write_text(path.read_text().replace("hooks-install:\n\t@devkit hooks install\n", replacement))
+    path.write_text(
+        path.read_text().replace("hooks-install:\n\t@devkit hooks install\n", replacement)
+    )
     write(repo, "devkit.toml", '[conform]\nmakefile_policy_targets = ["hooks-install"]\n')
     assert rules(repo) == ["CONFORM-17"]
 

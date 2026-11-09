@@ -297,4 +297,6 @@ def run(event: str, updates: str | None = None) -> int:
     root = _root(Path.cwd())
     with tempfile.TemporaryDirectory(prefix=".devkit-hooks-", dir=root) as directory:
         scratch = Path(directory)
-        return pre_commit(root, scratch) if event == "pre-commit" else pre_push(root, scratch, updates)
+        return (
+            pre_commit(root, scratch) if event == "pre-commit" else pre_push(root, scratch, updates)
+        )

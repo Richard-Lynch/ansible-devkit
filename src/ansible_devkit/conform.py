@@ -554,8 +554,7 @@ def check_makefile(root: Path, config: dict) -> list[Problem]:
     except (OSError, UnicodeError) as exc:
         return [Problem("Makefile", "CONFORM-15", f"unreadable: {exc}", unchecked=True)]
     targets = {
-        name: []
-        for name in ("help", "test", "lint", "deps-install", "deps-check", "hooks-install")
+        name: [] for name in ("help", "test", "lint", "deps-install", "deps-check", "hooks-install")
     }
     seen = set()
     active = []
@@ -582,8 +581,12 @@ def check_makefile(root: Path, config: dict) -> list[Problem]:
     out = []
     for name, recipe in targets.items():
         if name == "hooks-install":
-            if name not in seen or len(recipe) != 1 or not re.fullmatch(
-                r"@?devkit\s+hooks\s+install(?:\s+--repo-root\s+\.)?", recipe[0]
+            if (
+                name not in seen
+                or len(recipe) != 1
+                or not re.fullmatch(
+                    r"@?devkit\s+hooks\s+install(?:\s+--repo-root\s+\.)?", recipe[0]
+                )
             ):
                 out.append(
                     Problem(
