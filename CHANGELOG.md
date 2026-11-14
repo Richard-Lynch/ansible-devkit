@@ -6,6 +6,13 @@ All notable changes to `ansible-devkit`. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Renovate preset caps `python` below 3.15** (`allowedVersions`), so 3.12 to 3.14 updates
+  are still offered. Python 3.15 is stable but ansible-test supports only 3.12-3.14, and every
+  "Update python Docker tag to v3.15" PR failed CI. Tracking issue #32; remove the rule when
+  ansible-test supports 3.15.
+
 ## [0.7.0] — 2026-11-09
 
 ### Added
