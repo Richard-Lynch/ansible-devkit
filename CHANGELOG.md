@@ -6,6 +6,8 @@ All notable changes to `ansible-devkit`. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-09
+
 ### Added
 
 - **Devkit-owned Git hooks**, installed idempotently with `devkit hooks install
