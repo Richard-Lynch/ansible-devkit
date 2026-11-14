@@ -6,14 +6,25 @@ All notable changes to `ansible-devkit`. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-14
+
 ### Changed
 
 - **Renovate preset caps `python` below 3.15** (`allowedVersions`), so 3.12 to 3.14 updates
   are still offered. Python 3.15 is stable but ansible-test supports only 3.12-3.14, and every
   "Update python Docker tag to v3.15" PR failed CI. Tracking issue #32; remove the rule when
-  ansible-test supports 3.15.
+  ansible-test supports 3.15. Consumers pin the preset by tag, so it reaches them by bumping to
+  v0.7.1.
 
-## [0.7.0] — 2026-11-09
+### Notes
+
+- Correction to the 0.7.0 notes: they ended "No package version or consuming repository is
+  changed here", which was inaccurate. 0.7.0 adds CONFORM-17, which makes `devkit conform` fail
+  for a consumer whose Makefile lacks a `hooks-install` target whose single recipe is
+  `devkit hooks install`. A consumer's CI does not run `devkit conform`, so it is not broken by
+  the bump itself. The 0.7.0 date was also corrected to its release date, 2026-11-14.
+
+## [0.7.0] — 2026-11-14
 
 ### Added
 
@@ -57,7 +68,7 @@ All notable changes to `ansible-devkit`. The format follows
   service wiring and adoption in other repositories are deferred to a later card.
 - Git hooks cannot prevent `--no-verify`; **CI remains the real backstop**. New
   releases can propagate these gates through Renovate bumps and reviewer-visible
-  release notes. No package version or consuming repository is changed here.
+  release notes. (Corrected in 0.7.1: see Notes there.)
 
 ## [0.6.0] — 2026-11-07
 
